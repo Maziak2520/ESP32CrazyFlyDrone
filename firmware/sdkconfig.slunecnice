@@ -1,0 +1,4 @@
+# Project overlay on espressif/esp-drone defaults (see docs/drone-notes.md).
+# Vendor firmware on B-Cube ESP32-S2-Drone V2.0 used 715 motors: thrustBase 42000, thrustMin 8000.
+CONFIG_TARGET_ESP32_S2_DRONE_V1_2=y
+CONFIG_MOTOR_BRUSHED_715=y

@@ -1,0 +1,115 @@
+diff --git a/components/core/crazyflie/CMakeLists.txt b/components/core/crazyflie/CMakeLists.txt
+index 4358a86..bf96ffb 100644
+--- a/components/core/crazyflie/CMakeLists.txt
++++ b/components/core/crazyflie/CMakeLists.txt
+@@ -37,6 +37,8 @@ idf_component_register(SRCS "./hal/src/buzzer.c"
+                 "./modules/src/app_channel.c" 
+                 "./modules/src/attitude_pid_controller.c"
+                 "./modules/src/comm.c"
++                "./modules/src/crtp_localization_service.c"
++                "./modules/src/peer_localization.c"
+                 "./modules/src/commander.c"
+                 "./modules/src/console.c"
+                 "./modules/src/controller_indi.c"
+diff --git a/components/core/crazyflie/modules/src/comm.c b/components/core/crazyflie/modules/src/comm.c
+index c7495a5..b25d3c4 100644
+--- a/components/core/crazyflie/modules/src/comm.c
++++ b/components/core/crazyflie/modules/src/comm.c
+@@ -58,7 +58,7 @@ void commInit(void)
+   platformserviceInit();
+   logInit();
+   paramInit();
+-  //locSrvInit();
++  locSrvInit();
+ 
+   //TODO: check for USB first and prefer USB over radio
+   //setup CRTP communication channel
+diff --git a/components/core/crazyflie/modules/src/crtp_localization_service.c b/components/core/crazyflie/modules/src/crtp_localization_service.c
+index c4affd8..2641eb3 100644
+--- a/components/core/crazyflie/modules/src/crtp_localization_service.c
++++ b/components/core/crazyflie/modules/src/crtp_localization_service.c
+@@ -48,6 +48,7 @@
+ #include "peer_localization.h"
+ 
+ #include "num.h"
++#include "cfassert.h"
+ 
+ #define NBR_OF_RANGES_IN_PACKET   5
+ #define NBR_OF_SWEEPS_IN_PACKET   2
+@@ -191,7 +192,12 @@ static void extPosePackedHandler(const CRTPPacket* pk) {
+       ext_pose.x = item->x / 1000.0f;
+       ext_pose.y = item->y / 1000.0f;
+       ext_pose.z = item->z / 1000.0f;
+-      quatdecompress(item->quat, (float *)&ext_pose.quat.q0);
++      float q[4];  // GCC 14 rejects writing 16 bytes through &quat.q0
++      quatdecompress(item->quat, q);
++      ext_pose.quat.q0 = q[0];
++      ext_pose.quat.q1 = q[1];
++      ext_pose.quat.q2 = q[2];
++      ext_pose.quat.q3 = q[3];
+       ext_pose.stdDevPos = extPosStdDev;
+       ext_pose.stdDevQuat = extQuatStdDev;
+       estimatorEnqueuePose(&ext_pose);
+@@ -206,6 +212,7 @@ static void extPosePackedHandler(const CRTPPacket* pk) {
+   }
+ }
+ 
++#if 0 // Lighthouse/LPS are not built on ESP-Drone
+ static void lpsShortLppPacketHandler(CRTPPacket* pk) {
+   if (pk->size >= 2) {
+     bool success = lpsSendLppShort(pk->data[1], &pk->data[2], pk->size-2);
+@@ -260,6 +267,7 @@ static void lhPersistDataHandler(CRTPPacket* pk) {
+     workerSchedule(lhPersistDataWorker, (void*)args->combinedField);
+   }
+ }
++#endif
+ 
+ static void genericLocHandle(CRTPPacket* pk)
+ {
+@@ -267,9 +275,6 @@ static void genericLocHandle(CRTPPacket* pk)
+   if (pk->size < 1) return;
+ 
+   switch (type) {
+-    case LPS_SHORT_LPP_PACKET:
+-      lpsShortLppPacketHandler(pk);
+-      break;
+     case EMERGENCY_STOP:
+       stabilizerSetEmergencyStop();
+       break;
+@@ -282,9 +287,6 @@ static void genericLocHandle(CRTPPacket* pk)
+     case EXT_POSE_PACKED:
+       extPosePackedHandler(pk);
+       break;
+-    case LH_PERSIST_DATA:
+-      lhPersistDataHandler(pk);
+-      break;
+     default:
+       // Nothing here
+       break;
+@@ -334,6 +336,7 @@ void locSrvSendRangeFloat(uint8_t id, float range)
+   }
+ }
+ 
++#if 0 // Lighthouse/LPS are not built on ESP-Drone
+ void locSrvSendLighthouseAngle(int basestation, pulseProcessorResult_t* angles)
+ {
+   anglePacket *ap = (anglePacket *)LhAngle.data;
+@@ -359,6 +362,7 @@ void locSrvSendLighthouseAngle(int basestation, pulseProcessorResult_t* angles)
+     crtpSendPacket(&LhAngle);
+   }
+ }
++#endif
+ 
+ 
+ LOG_GROUP_START(ext_pos)
+diff --git a/components/core/crazyflie/modules/src/peer_localization.c b/components/core/crazyflie/modules/src/peer_localization.c
+index a3ea8d6..ee3ea8f 100644
+--- a/components/core/crazyflie/modules/src/peer_localization.c
++++ b/components/core/crazyflie/modules/src/peer_localization.c
+@@ -1,5 +1,5 @@
+ #include "config.h"
+-#include "debug.h"
++#include "debug_cf.h"
+ #include "FreeRTOS.h"
+ #include "task.h"
+ #include "peer_localization.h"

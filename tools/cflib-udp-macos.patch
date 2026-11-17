@@ -1,0 +1,51 @@
+diff --git a/cflib/crtp/udpdriver.py b/cflib/crtp/udpdriver.py
+index 713ea31..bf68abc 100644
+--- a/cflib/crtp/udpdriver.py
++++ b/cflib/crtp/udpdriver.py
+@@ -58,16 +58,27 @@ class UdpDriver(CRTPDriver):
+         #self.addr = ('192.168.43.42', 2390) #The destination IP and port
+         self.socket.bind(('', 2399))
+         self.socket.connect(self.addr)
++        # ESP-Drone only transmits while it hears from the host; poll like the radio driver.
++        self.socket.settimeout(0.02)
+ 
+-        self.socket.sendto('\xFF\x01\x01\x01'.encode(), self.addr)
++        self.socket.send('\xFF\x01\x01\x01'.encode())
+ 
+         if self.debug:
+             print("Connected to UDP server")
+             print("Server is: %s:%d" % self.addr)
+ 
+     def receive_packet(self, time=0):
++        sock = self.socket  # close() may set self.socket = None while we wait
++        if sock is None:
++            return None
+         try:
+-            data, addr = self.socket.recvfrom(1024)
++            data, addr = sock.recvfrom(1024)
++        except socket.timeout:
++            try:
++                sock.send(b'\xff\xff')  # CRTP null packet + checksum
++            except OSError:  # socket closed meanwhile
++                pass
++            return None
+         except OSError:
+             if self.debug:
+                 print("Socket error: socket might be closed.")
+@@ -105,14 +116,14 @@ class UdpDriver(CRTPDriver):
+         raw = raw + (cksum,)
+         # change the tuple to bytes
+         raw = bytearray(raw)
+-        self.socket.sendto(raw, self.addr)
++        self.socket.send(raw)
+         # print the raw date
+         if self.debug:
+             print("send: {}".format(binascii.hexlify(raw)))
+ 
+     def close(self):
+         # Remove this from the server clients list
+-        self.socket.sendto('\xFF\x01\x02\x02'.encode(), self.addr)
++        self.socket.send('\xFF\x01\x02\x02'.encode())
+         if self.debug:
+             print("Disconnected from UDP server")
+             print("Server is: %s:%d" % self.addr)

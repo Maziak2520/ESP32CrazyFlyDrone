@@ -1,0 +1,7 @@
+# potetos-for-everyone:begin
+.potetos/
+# potetos-for-everyone:end
+.venv/
+firmware-backup/*.bin
+vendor/
+logs/
