@@ -251,8 +251,8 @@ def run(dry: bool) -> None:
             print("taking off.  LEFT STICK up/down = height, A = land, B = KILL, D-pad = trim")
             dpad = {pygame.CONTROLLER_BUTTON_DPAD_LEFT: ("roll", -manual.TRIM_STEP),
                     pygame.CONTROLLER_BUTTON_DPAD_RIGHT: ("roll", manual.TRIM_STEP),
-                    pygame.CONTROLLER_BUTTON_DPAD_UP: ("pitch", -manual.TRIM_STEP),
-                    pygame.CONTROLLER_BUTTON_DPAD_DOWN: ("pitch", manual.TRIM_STEP)}
+                    pygame.CONTROLLER_BUTTON_DPAD_UP: ("pitch", manual.TRIM_STEP),
+                    pygame.CONTROLLER_BUTTON_DPAD_DOWN: ("pitch", -manual.TRIM_STEP)}
             held = set()
             while f.phase not in ("done", "abort"):
                 now = time.time()
@@ -273,7 +273,7 @@ def run(dry: bool) -> None:
                 for btn, (k, step) in dpad.items():
                     if pad.get_button(btn) and btn not in held:
                         trim[k] = clamp(trim[k] + step, -manual.TRIM_MAX, manual.TRIM_MAX)
-                        print(f"\ntrim roll={trim['roll']:+.1f} pitch={trim['pitch']:+.1f}")
+                        print(f"\ntrim roll={trim['roll']:+.2f} pitch={trim['pitch']:+.2f}")
                 held = {b for b in dpad if pad.get_button(b)}
                 up = -manual.shape(stick(pygame.CONTROLLER_AXIS_LEFTY))   # SDL: stick up = negative
                 before = f.phase

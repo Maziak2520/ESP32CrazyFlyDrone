@@ -246,6 +246,9 @@ CRTP header byte = `port<<4 | 0b11<<2 | channel`. Ports: 0 console, 2 param, 3 c
   centre learns toward the pilot's average (LEARN_S 6 s, +-12 %).
 - Roll trim +2.0 drifted right ~1 m/s while roll held +2.0 -> setpoint sign opposite to bench offset; trim now -2.0.
   D-pad trim works in hover.py too (saved to tools/fly_trim.json). Not yet flight-verified.
+- Pitch sign fixed 2026-11-18: log hover-20261118-203657 shows D-pad down -> trim_pitch +1.0 -> drone went MORE
+  forward, so +pitch setpoint = forward. Right stick pitch and D-pad up/down both flipped; trim step 0.5 -> 0.25.
+  D-pad direction = direction the drone gets pushed. Pitch trim reset to 0.
 
 ## Status
 - [x] USB serial works, boot self-test passed, factory flash backed up (2026-11-16)

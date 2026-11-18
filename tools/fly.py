@@ -3,7 +3,7 @@
 
 Controls: RT = thrust (release = 0), right stick = roll/pitch, left stick X = yaw.
           Hold A 1 s with RT released = arm.  B = disarm + stop motors (any time).
-          D-pad = trim roll (left/right) and pitch (up/down) in 0.5 deg steps; saved to tools/fly_trim.json.
+          D-pad = trim roll (left/right) and pitch (up/down) in 0.25 deg steps; D-pad direction = direction the drone is pushed; saved to tools/fly_trim.json.
 Failsafes: controller lost -> stop + disarm; Ctrl-C -> stop + disarm.
 Firmware: no setpoint for 0.5 s -> levels; 2 s -> motors off.
 Usage: .venv/bin/python tools/fly.py [--seconds N]
@@ -25,7 +25,7 @@ DEADZONE = 0.08
 ARM_HOLD_S = 1.0
 RATE_HZ = 50
 TRIM_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fly_trim.json")
-TRIM_STEP = 0.5
+TRIM_STEP = 0.25
 TRIM_MAX = 5.0
 # Bench: flat drone reads roll +1.94. Flight 2026-11-17 with +2.0 drifted right ~1 m/s -> sign is opposite.
 DEFAULT_TRIM = {"roll": -2.0, "pitch": 0.0}
@@ -41,11 +41,12 @@ def shape(v: float) -> float:
 def setpoint(rx: float, ry: float, lx: float, rt: float):
     """Gamepad (-1..1 sticks, SDL y down = +, 0..1 trigger) -> (roll, pitch, yawrate, thrust) for cflib.
 
-    Firmware conventions (crtp_commander_rpyt.c): negative pitch = forward, positive roll = right,
+    Firmware conventions (crtp_commander_rpyt.c): positive pitch = forward (flight log 2026-11-18:
+    +pitch trim drifted forward), positive roll = right,
     positive yaw = clockwise (firmware negates it). Bench-verify motor response before props.
     """
     roll = shape(rx) * MAX_TILT_DEG
-    pitch = shape(ry) * MAX_TILT_DEG          # stick up = SDL negative = forward
+    pitch = -shape(ry) * MAX_TILT_DEG         # stick up = SDL negative -> +pitch = forward
     yawrate = shape(lx) * MAX_YAW_RATE
     thrust = int(shape(rt) * MAX_THRUST)
     return roll, pitch, yawrate, thrust
@@ -53,7 +54,7 @@ def setpoint(rx: float, ry: float, lx: float, rt: float):
 
 assert setpoint(0, 0, 0, 0) == (0.0, 0.0, 0.0, 0)
 assert setpoint(0.05, -0.05, 0.05, 0.05) == (0.0, 0.0, 0.0, 0)  # inside deadzone
-assert setpoint(1, -1, 1, 1) == (MAX_TILT_DEG, -MAX_TILT_DEG, MAX_YAW_RATE, MAX_THRUST)
+assert setpoint(1, -1, 1, 1) == (MAX_TILT_DEG, MAX_TILT_DEG, MAX_YAW_RATE, MAX_THRUST)  # stick up-right
 
 
 def axis(pad, a) -> float:
@@ -93,11 +94,11 @@ def main() -> None:
         trim = dict(DEFAULT_TRIM)
         if os.path.exists(TRIM_FILE):
             trim.update(json.load(open(TRIM_FILE)))
-        print(f"trim roll={trim['roll']:+.1f} pitch={trim['pitch']:+.1f} (D-pad adjusts)")
+        print(f"trim roll={trim['roll']:+.2f} pitch={trim['pitch']:+.2f} (D-pad adjusts)")
         dpad = {pygame.CONTROLLER_BUTTON_DPAD_LEFT: ("roll", -TRIM_STEP),
                 pygame.CONTROLLER_BUTTON_DPAD_RIGHT: ("roll", TRIM_STEP),
-                pygame.CONTROLLER_BUTTON_DPAD_UP: ("pitch", -TRIM_STEP),
-                pygame.CONTROLLER_BUTTON_DPAD_DOWN: ("pitch", TRIM_STEP)}
+                pygame.CONTROLLER_BUTTON_DPAD_UP: ("pitch", TRIM_STEP),
+                pygame.CONTROLLER_BUTTON_DPAD_DOWN: ("pitch", -TRIM_STEP)}
         held = set()
         armed, a_since, last_print = False, None, 0.0
         end = time.time() + args.seconds if args.seconds else float("inf")
@@ -133,7 +134,7 @@ def main() -> None:
                 for btn, (k, step) in dpad.items():
                     if pad.get_button(btn) and btn not in held:
                         trim[k] = max(-TRIM_MAX, min(TRIM_MAX, trim[k] + step))
-                        print(f"\ntrim roll={trim['roll']:+.1f} pitch={trim['pitch']:+.1f}")
+                        print(f"\ntrim roll={trim['roll']:+.2f} pitch={trim['pitch']:+.2f}")
                 held = {b for b in dpad if pad.get_button(b)}
 
                 sp = setpoint(axis(pad, pygame.CONTROLLER_AXIS_RIGHTX), axis(pad, pygame.CONTROLLER_AXIS_RIGHTY),
