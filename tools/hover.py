@@ -7,6 +7,7 @@ metres from a 0.005 g bias). Instead:
   flying:   LEFT STICK UP/DOWN = climb/sink. Centre = hover thrust + vertical damping. Range +-12 %.
             Right stick = roll/pitch, left stick X = yaw, trim from tools/fly_trim.json.
             Stick learning: steady small right-stick corrections slowly move into the trim (--no-learn).
+  LB / RB = hover thrust -1 % / +1 % per press (stays; use when it keeps climbing or sinking).
   A = automatic landing (gentle descent, motors off on touchdown, never cut in the air).
   During landing the left stick still adds/removes thrust; full up = cancel landing.
   Land from low height: there is no height reference, so the descent is not speed-limited.
@@ -39,6 +40,8 @@ BAND = (0.80, 1.15)       # thrust / hover thrust, always
 DESC_GAIN, DESC_SLOPE, DESC_MIN = 0.92, 0.05, 0.82   # landing: 92 % of hover, -5 %/s, floor 82 %
 DESC_BRAKE_V = 0.5        # m/s; landing damping only brakes descents faster than this (flight 2: full
                           # damping cancelled the descent and A looked dead)
+NUDGE = 0.01              # LB/RB step, fraction of hover thrust
+NUDGE_RANGE = (0.75, 1.20)  # total LB/RB adjustment vs lift-off estimate
 LEARN_S = 6.0             # s; holding the stick shifts stick-centre hover thrust (+-12 % max)
 DESC_MAX_S = 4.0
 SETTLE_S = 2.0            # after DESC_MAX_S without touchdown: ramp 0.85 -> 0 of hover thrust
@@ -56,7 +59,7 @@ class Flight:
 
     def __init__(self, g0: float):
         self.g0, self.vz, self.az_f = g0, 0.0, g0
-        self.t_hover = self.t_hover0 = None
+        self.t_hover = self.t_hover0 = self.t_lift = None
         self.phase, self.t_phase, self.cmd = "ramp", 0.0, float(T_START)
 
     def update(self, az: float, dt: float) -> None:
@@ -73,6 +76,14 @@ class Flight:
         elif self.phase in ("climb", "pilot"):
             self.enter("descend")
 
+    def nudge(self, sign: int) -> None:
+        """LB/RB: shift hover thrust (and the stick-learning centre) by one step."""
+        if self.t_hover is None:
+            return
+        new0 = clamp(self.t_hover0 * (1 + sign * NUDGE), NUDGE_RANGE[0] * self.t_lift, NUDGE_RANGE[1] * self.t_lift)
+        self.t_hover *= new0 / self.t_hover0
+        self.t_hover0 = new0
+
     def _thrust(self, gain: float, vz_free: float = 0.0) -> int:
         """Damping acts on speed beyond vz_free (m/s, downward allowance)."""
         v = min(0.0, self.vz + vz_free) if vz_free else self.vz
@@ -85,7 +96,7 @@ class Flight:
         if self.phase == "ramp":
             self.cmd += RAMP * dt
             if self.vz > LIFTOFF_VZ:
-                self.t_hover = self.t_hover0 = self.cmd - RAMP * LIFTOFF_LAG
+                self.t_hover = self.t_hover0 = self.t_lift = self.cmd - RAMP * LIFTOFF_LAG
                 self.enter("climb")
             elif self.cmd > T_LIFTOFF_MAX:
                 self.enter("abort")
@@ -255,6 +266,8 @@ def run(dry: bool, no_learn: bool) -> None:
                     pygame.CONTROLLER_BUTTON_DPAD_UP: ("pitch", manual.TRIM_STEP),
                     pygame.CONTROLLER_BUTTON_DPAD_DOWN: ("pitch", -manual.TRIM_STEP)}
             held = set()
+            shoulders = {pygame.CONTROLLER_BUTTON_LEFTSHOULDER: -1, pygame.CONTROLLER_BUTTON_RIGHTSHOULDER: 1}
+            sh_held = set()
             while f.phase not in ("done", "abort"):
                 now = time.time()
                 dt, last = now - last, now
@@ -276,6 +289,11 @@ def run(dry: bool, no_learn: bool) -> None:
                         trim[k] = clamp(trim[k] + step, -manual.TRIM_MAX, manual.TRIM_MAX)
                         print(f"\ntrim roll={trim['roll']:+.2f} pitch={trim['pitch']:+.2f}")
                 held = {b for b in dpad if pad.get_button(b)}
+                for btn, sign in shoulders.items():
+                    if pad.get_button(btn) and btn not in sh_held and f.t_hover:
+                        f.nudge(sign)
+                        print(f"\nhover thrust {f.t_hover:.0f} ({f.t_hover0 / f.t_lift * 100:.0f} % of lift-off estimate)")
+                sh_held = {b for b in shoulders if pad.get_button(b)}
                 up = -manual.shape(stick(pygame.CONTROLLER_AXIS_LEFTY))   # SDL: stick up = negative
                 before = f.phase
                 thrust = f.step(dt, up)
