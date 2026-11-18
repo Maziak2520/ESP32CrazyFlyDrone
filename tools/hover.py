@@ -6,6 +6,7 @@ metres from a 0.005 g bias). Instead:
   take-off: thrust ramps until the accelerometer sees lift-off -> hover thrust for this battery, short climb.
   flying:   LEFT STICK UP/DOWN = climb/sink. Centre = hover thrust + vertical damping. Range +-12 %.
             Right stick = roll/pitch, left stick X = yaw, trim from tools/fly_trim.json.
+            Stick learning: steady small right-stick corrections slowly move into the trim (--no-learn).
   A = automatic landing (gentle descent, motors off on touchdown, never cut in the air).
   During landing the left stick still adds/removes thrust; full up = cancel landing.
   Land from low height: there is no height reference, so the descent is not speed-limited.
@@ -181,7 +182,7 @@ def sim_check() -> None:
     print("sim OK")
 
 
-def run(dry: bool) -> None:
+def run(dry: bool, no_learn: bool) -> None:
     os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
     import pygame
     from pygame._sdl2 import controller
@@ -284,11 +285,14 @@ def run(dry: bool) -> None:
                 r, p, y, _ = manual.setpoint(stick(pygame.CONTROLLER_AXIS_RIGHTX),
                                              stick(pygame.CONTROLLER_AXIS_RIGHTY),
                                              stick(pygame.CONTROLLER_AXIS_LEFTX), 0)
+                if f.phase == "pilot" and not no_learn:
+                    manual.learn_trim(trim, r, p, dt)
                 cf.commander.send_setpoint(r + trim["roll"], p + trim["pitch"], y, 0 if dry else thrust)
                 out.writerow([f"{now - t0:.3f}", f.phase, thrust, f"{up:.2f}", f"{f.vz:.3f}",
                               f"{s['az']:.3f}", f"{s['roll']:.1f}", f"{s['pitch']:.1f}", f"{s['vbat']:.2f}",
                               int(a_btn), trim["roll"], trim["pitch"], f"{f.t_hover or 0:.0f}"])
                 print(f"\r{f.phase:8s} thrust={thrust:5d} stick={up:+.2f} vz~{f.vz:+.2f} "
+                      f"trim=({trim['roll']:+.2f},{trim['pitch']:+.2f}) "
                       f"vbat={s['vbat']:.2f}   ", end="", flush=True)
                 time.sleep(max(0.0, 0.02 - (time.time() - now)))
         except KeyboardInterrupt:
@@ -308,8 +312,9 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--sim", action="store_true", help="offline checks only")
     ap.add_argument("--dry", action="store_true", help="real drone, disarmed, thrust 0")
+    ap.add_argument("--no-learn", action="store_true", help="disable stick learning of trim")
     a = ap.parse_args()
     if a.sim:
         sim_check()
     else:
-        run(a.dry)
+        run(a.dry, a.no_learn)

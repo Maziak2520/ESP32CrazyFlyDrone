@@ -250,6 +250,14 @@ CRTP header byte = `port<<4 | 0b11<<2 | channel`. Ports: 0 console, 2 param, 3 c
   forward, so +pitch setpoint = forward. Right stick pitch and D-pad up/down both flipped; trim step 0.5 -> 0.25.
   D-pad direction = direction the drone gets pushed. Pitch trim reset to 0.
 
+## Trim strategy (2026-11-18)
+- Setpoint and logged attitude share a frame (controller_pid.c uses state.attitude), so trim = ground offset.
+- `tools/calibrate_level.py`: drone on 4 equal supports under motor pods, 4 readings at 0/90/180/270 deg,
+  mean = drone offset (floor tilt cancels), written as trim. Old trim kept in tools/level_calib.json.
+- Stick learning (`fly.learn_trim`, used by fly.py when thrust >= 35000 and hover.py in pilot phase):
+  trim += stick_deg * dt / 20 s, only for corrections < 40 % stick. `--no-learn` disables. D-pad unchanged.
+- In-flight tilt is invisible to the accelerometer (thrust is along body axis); drift needs pilot or camera.
+
 ## Status
 - [x] USB serial works, boot self-test passed, factory flash backed up (2026-11-16)
 - [x] Wi-Fi AP up on USB power, Mac joined, probe echo 10/10 (2026-11-16)

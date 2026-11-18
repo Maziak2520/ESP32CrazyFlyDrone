@@ -27,8 +27,22 @@ RATE_HZ = 50
 TRIM_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fly_trim.json")
 TRIM_STEP = 0.25
 TRIM_MAX = 5.0
-# Bench: flat drone reads roll +1.94. Flight 2026-11-17 with +2.0 drifted right ~1 m/s -> sign is opposite.
-DEFAULT_TRIM = {"roll": -2.0, "pitch": 0.0}
+# Trim is in the same frame as the logged attitude (setpoint and state.attitude): trim = ground level offset.
+# Start from tools/calibrate_level.py, then stick learning / D-pad.
+DEFAULT_TRIM = {"roll": 0.0, "pitch": 0.0}
+LEARN_TAU = 20.0          # s; holding a 2 deg correction moves trim ~0.1 deg/s
+LEARN_MAX_STICK = 0.4     # only small, steady corrections are learned; bigger = manoeuvre, ignored
+LEARN_MIN_THRUST = 35000  # fly.py: learn only when probably airborne
+
+
+def learn_trim(trim: dict, roll_cmd: float, pitch_cmd: float, dt: float) -> None:
+    """Stick learning: move trim slowly toward the pilot's steady right-stick correction (deg, without trim).
+    As trim absorbs the correction the pilot needs less stick, so it converges."""
+    lim = LEARN_MAX_STICK * MAX_TILT_DEG
+    if abs(roll_cmd) > lim or abs(pitch_cmd) > lim:
+        return
+    for k, cmd in (("roll", roll_cmd), ("pitch", pitch_cmd)):
+        trim[k] = max(-TRIM_MAX, min(TRIM_MAX, trim[k] + cmd * dt / LEARN_TAU))
 
 
 def shape(v: float) -> float:
@@ -57,6 +71,22 @@ assert setpoint(0.05, -0.05, 0.05, 0.05) == (0.0, 0.0, 0.0, 0)  # inside deadzon
 assert setpoint(1, -1, 1, 1) == (MAX_TILT_DEG, MAX_TILT_DEG, MAX_YAW_RATE, MAX_THRUST)  # stick up-right
 
 
+def _learn_check() -> None:
+    t = {"roll": 0.0, "pitch": 0.0}
+    for _ in range(1000):                      # pilot holds -2 deg roll for 20 s, no pitch
+        learn_trim(t, -2.0, 0.0, 0.02)
+    assert abs(t["roll"] + 2.0) < 0.01 and t["pitch"] == 0.0, t
+    learn_trim(t, 10.0, 0.0, 1.0)              # big manoeuvre: ignored
+    assert abs(t["roll"] + 2.0) < 0.01, t
+    t = {"roll": 0.0, "pitch": 0.0}
+    for _ in range(5000):                      # pilot's need shrinks as trim grows -> converges to true 2.0
+        learn_trim(t, 2.0 - t["roll"], 0.0, 0.02)
+    assert abs(t["roll"] - 2.0) < 0.05, t
+
+
+_learn_check()
+
+
 def axis(pad, a) -> float:
     return pad.get_axis(a) / 32767
 
@@ -64,6 +94,7 @@ def axis(pad, a) -> float:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seconds", type=float, default=0, help="auto-exit after N s (0 = until Ctrl-C)")
+    ap.add_argument("--no-learn", action="store_true", help="disable stick learning of trim")
     args = ap.parse_args()
 
     import cflib.crtp
@@ -100,7 +131,7 @@ def main() -> None:
                 pygame.CONTROLLER_BUTTON_DPAD_UP: ("pitch", TRIM_STEP),
                 pygame.CONTROLLER_BUTTON_DPAD_DOWN: ("pitch", -TRIM_STEP)}
         held = set()
-        armed, a_since, last_print = False, None, 0.0
+        armed, a_since, last_print, last = False, None, 0.0, time.time()
         end = time.time() + args.seconds if args.seconds else float("inf")
 
         def disarm(reason: str) -> None:
@@ -139,12 +170,17 @@ def main() -> None:
 
                 sp = setpoint(axis(pad, pygame.CONTROLLER_AXIS_RIGHTX), axis(pad, pygame.CONTROLLER_AXIS_RIGHTY),
                               axis(pad, pygame.CONTROLLER_AXIS_LEFTX), rt)
+                now = time.time()
+                if armed and sp[3] >= LEARN_MIN_THRUST and not args.no_learn:
+                    learn_trim(trim, sp[0], sp[1], now - last)
+                last = now
                 sp = (sp[0] + trim["roll"], sp[1] + trim["pitch"], sp[2], sp[3])
                 cf.commander.send_setpoint(*sp) if armed else cf.commander.send_setpoint(0, 0, 0, 0)
 
                 if time.time() - last_print > 0.5:
                     last_print = time.time()
-                    print(f"\r{'ARMED ' if armed else 'safe  '} roll={sp[0]:+5.1f} pitch={sp[1]:+5.1f} "
+                    print(f"\r{'ARMED ' if armed else 'safe  '} trim=({trim['roll']:+.2f},{trim['pitch']:+.2f}) "
+                          f"roll={sp[0]:+5.1f} pitch={sp[1]:+5.1f} "
                           f"yaw={sp[2]:+6.1f} thrust={sp[3] if armed else 0:5d} | "
                           f"vbat={state.get('pm.vbat', 0):.2f}V att=({state.get('stabilizer.roll', 0):+.0f},"
                           f"{state.get('stabilizer.pitch', 0):+.0f})   ", end="", flush=True)
