@@ -271,6 +271,10 @@ Boot log then shows "VL53L1X I2C connection [OK]" (was FAIL). Test without power
 watch serial log while plugging in, or reconnect Wi-Fi and read log group `range` var `zrange`.
 Mount: lens down, clear view of floor; height-hold then works (flightmode.althold=1).
 Power is not needed for wiring; only for the test.
+- 2026-11-24 check: Wi-Fi up, echo 10/10, but `range.zrange` = 0.000 m and param `deck.bcZRanger2` = 0:
+  firmware did not detect the sensor at boot. Log var exists (firmware always exposes it). Suspects:
+  XSHUT wiring (GPIO1/J4-8 must go HIGH), I2C address/pull-ups, or 3.3 V. Next check: power drone via USB
+  only and read boot log for "Z-down sensor [OK]/[FAIL]" + "VL53L1X I2C connection" lines.
 
 ## Status
 - [x] USB serial works, boot self-test passed, factory flash backed up (2026-11-16)
