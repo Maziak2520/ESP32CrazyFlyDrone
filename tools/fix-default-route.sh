@@ -19,6 +19,8 @@ networksetup -ordernetworkservices "Pixel 9 Pro" Wi-Fi >/dev/null 2>&1 || true
 
 sudo route -qn delete -net 0.0.0.0/1 2>/dev/null || true
 sudo route -qn delete -net 128.0.0.0/1 2>/dev/null || true
+# Clear any drone default route that steals 8.8.8.8 etc. (only while we re-add ours)
+sudo route -qn delete default 2>/dev/null || true
 sudo route -qn add -net 0.0.0.0/1 "$PHONE_GW"
 sudo route -qn add -net 128.0.0.0/1 "$PHONE_GW"
 
