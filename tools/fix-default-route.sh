@@ -1,28 +1,31 @@
 #!/bin/bash
-# Keep internet via phone (Pixel 9 Pro, en17) while Wi-Fi (en0) is joined to the drone AP.
-# Drone AP 192.168.43.42/24 must stay reachable; everything else must go via phone.
-# Usage: sudo ./tools/fix-default-route.sh [phone_iface] [phone_gw]
+# Keep internet via phone USB tethering while Wi-Fi (en0) is joined to the drone AP.
+# Drone AP = 192.168.43.0/24, gw 192.168.43.1. macOS installs drone default route on join.
+# Fix: split-default 0.0.0.0/1 + 128.0.0.0/1 via phone gateway (longer prefix than /0,
+# always wins), drone subnet pinned to en0.
+#
+# Usage: sudo ./tools/fix-default-route.sh [phone_iface]
+# Run AFTER joining the drone Wi-Fi.
 set -e
 PHONE_IF="${1:-en17}"
-PHONE_GW="${2:-$(route -n get default | awk '/gateway/{print $2}')}"
 DRONE_IF="en0"
 
-echo "Phone iface: $PHONE_IF gw: $PHONE_GW"
+PHONE_IP=$(ipconfig getifaddr "$PHONE_IF") || { echo "no IP on $PHONE_IF - tethering off?"; exit 1; }
+PHONE_GW=$(ipconfig getpacket "$PHONE_IF" | awk -F': ' '/^router/{print $2}' | tr -d '(),' | head -1)
+[ -n "$PHONE_GW" ] || { echo "no gateway in DHCP on $PHONE_IF"; exit 1; }
+echo "Phone: $PHONE_IF ip=$PHONE_IP gw=$PHONE_GW"
 
-# 1) Make phone first in service order so its default route wins ties
-networksetup -ordernetworkservices "Pixel 9 Pro" Wi-Fi >/dev/null
+networksetup -ordernetworkservices "Pixel 9 Pro" Wi-Fi >/dev/null 2>&1 || true
 
-# 2) Split-default routes: 0.0.0.0/1 + 128.0.0.0/1 via phone gateway.
-#    Longer prefix than 0.0.0.0/0 -> always beat the drone's default route.
-sudo route -qn delete -net 0.0.0.0/1 "$PHONE_GW" 2>/dev/null || true
-sudo route -qn delete -net 128.0.0.0/1 "$PHONE_GW" 2>/dev/null || true
+sudo route -qn delete -net 0.0.0.0/1 2>/dev/null || true
+sudo route -qn delete -net 128.0.0.0/1 2>/dev/null || true
 sudo route -qn add -net 0.0.0.0/1 "$PHONE_GW"
 sudo route -qn add -net 128.0.0.0/1 "$PHONE_GW"
 
-# 3) Pin drone subnet explicitly (in case default route moved to en0)
 sudo route -qn delete -net 192.168.43.0/24 2>/dev/null || true
 sudo route -qn add -net 192.168.43.0/24 -interface "$DRONE_IF"
 
-echo "--- default:"; route -n get default | grep -E 'gateway|interface'
-echo "--- 192.168.43.42:"; route -n get 192.168.43.42 | grep -E 'gateway|interface'
-echo "--- internet test:"; ping -c1 -W2 8.8.8.8 | tail -1
+echo "--- 8.8.8.8 via:"; route -n get 8.8.8.8 | grep -E 'gateway|interface'
+echo "--- drone via:";   route -n get 192.168.43.42 | grep -E 'gateway|interface'
+echo "--- internet:";    ping -c1 -W2 8.8.8.8 | tail -1
+echo "--- drone:";       ping -c1 -W2 192.168.43.42 | tail -1
