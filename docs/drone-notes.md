@@ -275,6 +275,11 @@ Power is not needed for wiring; only for the test.
   firmware did not detect the sensor at boot. Log var exists (firmware always exposes it). Suspects:
   XSHUT wiring (GPIO1/J4-8 must go HIGH), I2C address/pull-ups, or 3.3 V. Next check: power drone via USB
   only and read boot log for "Z-down sensor [OK]/[FAIL]" + "VL53L1X I2C connection" lines.
+- 2026-11-24 boot log after RTS reset: I2C1 bus OK (SDA=40, SCL=41, 100 kHz, pull-ups internal) but
+  "ZR2: Z-down sensor [FAIL]" / "VL53L1X I2C connection [FAIL]"; no Model_ID printed. So the bus is up,
+  the sensor does not answer at 0x29. Check in order: XSHUT(J4-8)->GPIO1 actually high, VCC 3.3 V at J3-1
+  (multimeter), GND J4-5, SDA/SCL not swapped (J4-6/7), sensor not in shutdown, module not dead.
+  Note: firmware never toggles XSHUT itself (vl53l1xInit only does I2C), XSHUT must be tied HIGH.
 
 ## Status
 - [x] USB serial works, boot self-test passed, factory flash backed up (2026-11-16)
