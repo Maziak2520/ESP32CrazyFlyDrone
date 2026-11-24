@@ -258,6 +258,20 @@ CRTP header byte = `port<<4 | 0b11<<2 | channel`. Ports: 0 console, 2 param, 3 c
   trim += stick_deg * dt / 20 s, only for corrections < 40 % stick. `--no-learn` disables. D-pad unchanged.
 - In-flight tilt is invisible to the accelerometer (thrust is along body axis); drift needs pilot or camera.
 
+## CJMCU-531 VL53L1X wiring (photo PXL_20261124_*, 2026-11-24)
+Module pins: VCC GND SCL SDA GPIO1 XSHUT.
+- VCC -> J3 pin 1 (VDD33, 3.3 V). NOT 5 V.
+- GND -> J3 pin 4 (GND) or any GND.
+- SDA -> J4 pin 6 (I2C1_SDA, GPIO40)
+- SCL -> J4 pin 7 (I2C1_SCL, GPIO41)
+- XSHUT -> J4 pin 8 (EXT_IO1, GPIO1): firmware boots the sensor via this pin
+- GPIO1 (interrupt) -> not connected
+Firmware: SENSORS_ENABLE_RANGE_VL53L1X=y, deck bus = I2C1 @100 kHz, reads range.zrange at 40 Hz.
+Boot log then shows "VL53L1X I2C connection [OK]" (was FAIL). Test without power-off:
+watch serial log while plugging in, or reconnect Wi-Fi and read log group `range` var `zrange`.
+Mount: lens down, clear view of floor; height-hold then works (flightmode.althold=1).
+Power is not needed for wiring; only for the test.
+
 ## Status
 - [x] USB serial works, boot self-test passed, factory flash backed up (2026-11-16)
 - [x] Wi-Fi AP up on USB power, Mac joined, probe echo 10/10 (2026-11-16)
