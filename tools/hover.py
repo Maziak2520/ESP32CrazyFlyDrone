@@ -25,26 +25,27 @@ import random
 import time
 
 G = 9.81
-T_START = 30000           # ramp start, well below lift-off
-RAMP = 6000               # thrust units per second during lift-off search
-T_LIFTOFF_MAX = 55000     # no lift-off by here -> abort (battery/props)
-THRUST_LIMIT = 58000      # firmware caps at 60000
+T_START = 38000           # ramp start (lift-off is ~50-54k with sensor attached)
+RAMP = 8000               # thrust units per second during lift-off search
+T_LIFTOFF_MAX = 58500     # no lift-off by here -> abort (battery/props)
+THRUST_LIMIT = 59500      # firmware caps at 60000
 LIFTOFF_VZ = 0.15         # m/s estimated climb that counts as lift-off
 LIFTOFF_Z = 0.05          # m laser height rise above ground that also counts as lift-off
-LIFTOFF_LAG = 0.50        # s; detection delay, subtracted from the ramp to estimate hover thrust
-CLIMB_S, CLIMB_GAIN = 0.8, 1.06    # fallback-only short climb after lift-off
+LIFTOFF_LAG = 0.25        # s; fallback detection delay subtracted from ramp (8000*0.25 = 2000)
+LIFTOFF_LAG_Z = 0.37      # s; laser lift-off detection delay (8000*0.37 = 2960; laser closes loop after)
+CLIMB_S, CLIMB_GAIN = 0.8, 1.07    # fallback-only short climb after lift-off
 TAU = 1.0                 # s; leaky speed estimate = damping only, cannot run away on bias
 KD = 0.30                 # damping, fraction of hover thrust per m/s (no-sensor fallback)
-KP_Z, KD_Z = 0.32, 0.38   # laser height P and D gains (fraction of hover thrust per m and per m/s)
-KI_Z, IZ_MAX = 0.10, 0.15 # height I gain (fraction of hover thrust per m*s) and cap (absorbs battery sag)
+KP_Z, KD_Z = 0.36, 0.42   # laser height P and D gains (fraction of hover thrust per m and per m/s)
+KI_Z, IZ_MAX = 0.12, 0.18 # height I gain (fraction of hover thrust per m*s) and cap (absorbs battery sag)
 Z_DEFAULT = 1.0           # m default target hover height
 Z_STEP = 0.10             # m per LB/RB press
 Z_MIN, Z_MAX = 0.20, 2.00 # m allowed target height range
 Z_RATE = 0.50             # m/s max target height slew rate (smooth climb & left-stick rate)
 LAND_RATE = 0.35          # m/s target descent rate during landing with laser
 LAND_DONE_Z = 0.05        # m laser height above ground considered landed
-PILOT_RANGE = 0.12        # fallback: full left stick = +-12 % of hover thrust
-BAND = (0.72, 1.18)       # thrust / hover thrust clamp
+PILOT_RANGE = 0.14        # fallback: full left stick = +-14 % of hover thrust
+BAND = (0.72, 1.22)       # thrust / hover thrust clamp
 DESC_GAIN, DESC_SLOPE, DESC_MIN = 0.92, 0.05, 0.82
 DESC_BRAKE_V = 0.5
 NUDGE = 0.01              # fallback LB/RB step, fraction of hover thrust
@@ -76,7 +77,7 @@ class Flight:
         """az: body z acceleration in g. z_m: tilt-compensated laser height in metres (if available)."""
         self.vz += (az - self.g0) * G * dt - self.vz * dt / TAU
         self.az_f += 0.3 * (az - self.az_f)
-        if z_m is not None and 0.0 < z_m < 4.0:
+        if z_m is not None and 0.0 <= z_m < 4.0:
             if self.has_z and dt > 0:
                 vz_laser = (z_m - self.z) / dt
                 if abs(vz_laser) < 5.0:
@@ -124,7 +125,8 @@ class Flight:
             self.cmd += RAMP * dt
             lifted = (z_ok and (self.z - self.z0) > LIFTOFF_Z) or self.vz > LIFTOFF_VZ
             if lifted:
-                self.t_hover = self.t_hover0 = self.t_lift = self.cmd - RAMP * LIFTOFF_LAG
+                lag = LIFTOFF_LAG_Z if z_ok else LIFTOFF_LAG
+                self.t_hover = self.t_hover0 = self.t_lift = self.cmd - RAMP * lag
                 self.z_ref = self.z
                 self.enter("pilot" if z_ok else "climb")
             elif self.cmd > T_LIFTOFF_MAX:
@@ -266,7 +268,7 @@ def run(dry: bool, no_learn: bool, target_z: float) -> None:
         dt = (ts - s["last_ts"]) / 1000 if s["last_ts"] is not None else 0.02
         s["last_ts"] = ts
         z_m = None
-        if "range.zrange" in d and d["range.zrange"] > 0:
+        if "range.zrange" in d and 0 <= d["range.zrange"] < 5000:
             tilt_cos = max(0.5, math.cos(math.radians(roll)) * math.cos(math.radians(pitch)))
             z_m = (d["range.zrange"] / 1000.0) * tilt_cos
             s["z_m"] = z_m
@@ -301,9 +303,9 @@ def run(dry: bool, no_learn: bool, target_z: float) -> None:
         g0 = sum(s["samples"]) / len(s["samples"])
         if abs(s["roll"]) > 6 or abs(s["pitch"]) > 6:
             raise SystemExit(f"not level (roll {s['roll']:.1f}, pitch {s['pitch']:.1f}): put it flat")
-        use_z = has_zr and len(s["z_samples"]) >= 10
+        use_z = has_zr and len(s["z_samples"]) >= 5
         z0 = sum(s["z_samples"]) / len(s["z_samples"]) if use_z else 0.0
-        mode_str = f"LASER height hold target={target_z:.2f} m (ground z0={z0:.3f} m)" if use_z else "NO LASER (accel fallback)"
+        mode_str = f"LASER height hold target={target_z:.2f} m (ground z0={z0:.3f} m)" if use_z else f"NO LASER (bcZRanger2={int(has_zr)}, z_samples={len(s['z_samples'])})"
         print(f"ground: acc.z={g0:.4f} g  vbat={s['vbat']:.2f} V  trim={trim}  [{mode_str}]")
 
         f = Flight(g0, target_z=target_z, has_z=use_z, z0=z0)
