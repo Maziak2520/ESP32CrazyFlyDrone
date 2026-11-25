@@ -26,7 +26,7 @@ import time
 
 G = 9.81
 T_START = 43000           # ramp start; motor vibration on ground below 50k can fake vz>0.15 if we trigger earlier
-T_LIFTOFF_MIN = 49000     # minimum thrust before accel-only lift-off can trigger (prevents vibration false-trigger at 47k)
+T_LIFTOFF_MIN = 48500     # minimum thrust before accel-only lift-off can trigger (prevents vibration false-trigger at 47k)
 RAMP = 10000              # thrust units per second during lift-off search (43k -> 51k in 0.8 s)
 T_LIFTOFF_MAX = 58500     # no lift-off by here -> abort (battery/props)
 THRUST_LIMIT = 59500      # firmware caps at 60000
@@ -219,7 +219,7 @@ def sim(seed: int, bias: float, pilot: bool, pilot_s: float = 6.0, t_true: float
 
 def sim_check() -> None:
     for bias in (-0.005, 0.0, 0.005):
-        for t_true in (49000.0, 51500.0, 54000.0):
+        for t_true in (48500.0, 50500.0, 52500.0):
             lz = [sim(seed, bias, pilot=False, pilot_s=8.0, t_true=t_true, has_z=True, target_z=1.0) for seed in range(1, 5)]
             rs = [sim(seed, bias, pilot=True, t_true=t_true, has_z=False) for seed in range(1, 5)]
             print(f"bias {bias:+.3f} g, hover {t_true:.0f} | LASER 1.0m: max {max(r['max_z'] for r in lz):.2f} m, "
