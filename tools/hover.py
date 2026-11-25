@@ -69,6 +69,7 @@ class Flight:
     def __init__(self, g0: float, target_z: float = Z_DEFAULT, has_z: bool = False, z0: float = 0.0):
         self.g0, self.vz, self.az_f = g0, 0.0, g0
         self.has_z, self.z0, self.z, self.vz_z = has_z, z0, z0, 0.0
+        self.z_max_seen, self.z_blocked = z0, False
         self.target_z = clamp(target_z, Z_MIN, Z_MAX)
         self.z_ref, self.iz, self.z_age = z0, 0.0, 0.0
         self.t_hover = self.t_hover0 = self.t_lift = None
@@ -81,9 +82,16 @@ class Flight:
         if z_m is not None and 0.0 <= z_m < 4.0:
             if self.has_z and dt > 0:
                 vz_laser = (z_m - self.z) / dt
-                if abs(vz_laser) < 5.0:
+                # Glitch rejection: if airborne (z > 0.35 m) and laser suddenly drops > 0.35 m in one frame
+                # (< -6 m/s downward jump, e.g. rainbow cable swinging across lens or over table edge),
+                # ignore the glitched drop for 0.35 s instead of slamming vz_z negative and blasting max thrust.
+                if self.phase != "ramp" and self.z > 0.35 and (z_m - self.z) < -0.35 and self.z_age < 0.35:
+                    self.z_age += dt
+                    return
+                if abs(vz_laser) < 3.0:
                     self.vz_z += 0.25 * (vz_laser - self.vz_z)
             self.z, self.z_age = z_m, 0.0
+            self.z_max_seen = max(self.z_max_seen, z_m)
         else:
             self.z_age += dt
 
@@ -115,7 +123,9 @@ class Flight:
     def _thrust_z(self, dt: float, vz_cmd: float = 0.0) -> int:
         err = self.z_ref - self.z
         self.iz = clamp(self.iz + KI_Z * err * dt, -IZ_MAX, IZ_MAX)
-        gain = 1.0 + KP_Z * err + self.iz + KD_Z * (vz_cmd - self.vz_z)
+        # Use fused laser+accel vertical velocity (0.5*vz_z + 0.5*vz) so a laser step cannot invert D-term alone
+        vz_d = 0.5 * self.vz_z + 0.5 * self.vz
+        gain = 1.0 + KP_Z * err + self.iz + KD_Z * (vz_cmd - vz_d)
         return int(clamp(self.t_hover * gain, BAND[0] * self.t_hover, min(BAND[1] * self.t_hover, THRUST_LIMIT)))
 
     def step(self, dt: float, stick_up: float = 0.0) -> int:
@@ -141,6 +151,10 @@ class Flight:
                 self.enter("pilot")
             return self._thrust(CLIMB_GAIN)
         if self.phase == "pilot":
+            # Safety guard: if after 1.5 s in pilot mode laser height has never exceeded z0 + 6 cm (e.g. lens
+            # blocked by tape/wire/hand reading 1-5 cm forever), disable laser mode so thrust cannot pin at max.
+            if z_ok and self.t_phase > 1.5 and (self.z_max_seen - self.z0) < 0.06:
+                self.has_z, self.z_blocked, z_ok = False, True, False
             if z_ok:
                 if abs(stick_up) > 0:
                     self.target_z = clamp(self.target_z + stick_up * Z_RATE * dt, Z_MIN, Z_MAX)
@@ -294,7 +308,7 @@ def run(dry: bool, no_learn: bool, target_z: float, no_laser_ok: bool = False) -
         for var in ("acc.z", "stabilizer.roll", "stabilizer.pitch", "pm.vbat"):
             log.add_variable(var, "float")
         if has_zr and cf.log.toc.get_element_by_complete_name("range.zrange"):
-            log.add_variable("range.zrange")
+            log.add_variable("range.zrange")  # fetch as native uint16_t (like fly.py), not float!
         cf.log.add_config(log)
         log.data_received_cb.add_callback(on_log)
         log.start()
@@ -370,7 +384,11 @@ def run(dry: bool, no_learn: bool, target_z: float, no_laser_ok: bool = False) -
                 sh_held = {b for b in shoulders if pad.get_button(b)}
                 up = -manual.shape(stick(pygame.CONTROLLER_AXIS_LEFTY))
                 before = f.phase
+                was_blocked = f.z_blocked
                 thrust = f.step(dt, up)
+                if f.z_blocked and not was_blocked:
+                    print(f"\n*** WARNING: laser height stuck near {f.z:.3f} m (<6 cm rise) - lens blocked/covered! "
+                          f"Falling back to non-laser mode so thrust does not pin at max. ***")
                 if f.phase != before:
                     extra = f" (hover thrust {f.t_hover:.0f}, target {f.target_z:.2f} m)" if f.t_hover else ""
                     print(f"\n{now - t0:5.1f}s -> {f.phase}{extra}")
