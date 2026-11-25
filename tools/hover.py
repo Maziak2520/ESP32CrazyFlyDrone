@@ -158,7 +158,7 @@ class Flight:
                 diff = self.target_z - self.z_ref
                 step_z = clamp(diff, -Z_RATE * dt, Z_RATE * dt)
                 self.z_ref += step_z
-                return self._thrust_z(dt)
+                return self._thrust_z(dt, vz_cmd=0.45 * (step_z / dt if dt > 0 else 0.0))
             self.t_hover = clamp(self.t_hover * (1 + PILOT_RANGE * stick_up * dt / LEARN_S),
                                  self.t_hover0 * (1 - PILOT_RANGE), self.t_hover0 * (1 + PILOT_RANGE))
             return self._thrust(1 + PILOT_RANGE * stick_up)
