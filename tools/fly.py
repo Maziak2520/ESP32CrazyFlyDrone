@@ -115,9 +115,14 @@ def main() -> None:
         cf = scf.cf
         if str(cf.param.get_value("stabilizer.stop")) == "1":
             raise SystemExit("emergency stop latched (stabilizer.stop=1): power-cycle the drone")
+        has_zr = str(cf.param.get_value("deck.bcZRanger2")) == "1"
+        if not has_zr:
+            print("WARNING: VL53L1X laser height sensor NOT detected (deck.bcZRanger2=0) - manual flight OK")
         log = LogConfig(name="fly", period_in_ms=200)
         for v in ("pm.vbat", "stabilizer.roll", "stabilizer.pitch"):
             log.add_variable(v)
+        if has_zr and cf.log.toc.get_element_by_complete_name("range.zrange"):
+            log.add_variable("range.zrange")
         cf.log.add_config(log)
         log.data_received_cb.add_callback(lambda ts, d, _: state.update(d))
         log.start()
@@ -179,11 +184,12 @@ def main() -> None:
 
                 if time.time() - last_print > 0.5:
                     last_print = time.time()
+                    z_str = f" z={state.get('range.zrange', 0)/1000:.2f}m" if has_zr else " z=NO_LASER"
                     print(f"\r{'ARMED ' if armed else 'safe  '} trim=({trim['roll']:+.2f},{trim['pitch']:+.2f}) "
                           f"roll={sp[0]:+5.1f} pitch={sp[1]:+5.1f} "
                           f"yaw={sp[2]:+6.1f} thrust={sp[3] if armed else 0:5d} | "
                           f"vbat={state.get('pm.vbat', 0):.2f}V att=({state.get('stabilizer.roll', 0):+.0f},"
-                          f"{state.get('stabilizer.pitch', 0):+.0f})   ", end="", flush=True)
+                          f"{state.get('stabilizer.pitch', 0):+.0f}){z_str}   ", end="", flush=True)
                 time.sleep(1 / RATE_HZ)
         except KeyboardInterrupt:
             pass

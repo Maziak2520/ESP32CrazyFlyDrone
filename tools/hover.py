@@ -11,7 +11,7 @@ using range.zrange (mm, tilt-compensated) + accelerometer vertical speed damping
   A = automatic landing (ramps target height down at 0.35 m/s until z < 0.08 m or touchdown).
   B = kill motors now (any time).
   Controller lost -> landing. Tilt > 35 deg -> kill. Ctrl-C -> kill. 60 s -> landing.
-Usage: .venv/bin/python tools/hover.py [--height 1.0]
+Usage: .venv/bin/python tools/hover.py [--height 1.0] [--no-laser-ok]
        .venv/bin/python tools/hover.py --sim    (offline checks, no drone)
        .venv/bin/python tools/hover.py --dry    (real drone, never armed, thrust 0)
 Flight log CSV: logs/hover-*.csv
@@ -238,7 +238,7 @@ def sim_check() -> None:
     print("sim OK")
 
 
-def run(dry: bool, no_learn: bool, target_z: float) -> None:
+def run(dry: bool, no_learn: bool, target_z: float, no_laser_ok: bool = False) -> None:
     os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
     import pygame
     from pygame._sdl2 import controller
@@ -308,6 +308,18 @@ def run(dry: bool, no_learn: bool, target_z: float) -> None:
         z0 = sum(s["z_samples"]) / len(s["z_samples"]) if use_z else 0.0
         mode_str = f"LASER height hold target={target_z:.2f} m (ground z0={z0:.3f} m)" if use_z else f"NO LASER (bcZRanger2={int(has_zr)}, z_samples={len(s['z_samples'])})"
         print(f"ground: acc.z={g0:.4f} g  vbat={s['vbat']:.2f} V  trim={trim}  [{mode_str}]")
+        if not use_z and not dry and not no_laser_ok:
+            print("\n*** WARNING: VL53L1X laser height sensor NOT detected (deck.bcZRanger2=0) ***")
+            print("    Check 4 wires: VCC->J3-1(3V3), GND->J4-5, SDA->J4-6(SDA1), SCL->J4-7(SCL1), then power-cycle drone.")
+            print("    Press Y on gamepad (or pass --no-laser-ok) to fly in manual/accel fallback mode anyway, or B / Ctrl-C to abort.")
+            while True:
+                pygame.event.pump()
+                if pad.get_button(pygame.CONTROLLER_BUTTON_B) or not pad.attached():
+                    raise SystemExit("aborted (laser sensor not detected)")
+                if pad.get_button(pygame.CONTROLLER_BUTTON_Y):
+                    print("    -> Y pressed: continuing without laser sensor (manual height fallback)")
+                    break
+                time.sleep(0.05)
 
         f = Flight(g0, target_z=target_z, has_z=use_z, z0=z0)
         s["flight"] = f
@@ -396,8 +408,9 @@ if __name__ == "__main__":
     ap.add_argument("--sim", action="store_true", help="offline checks only")
     ap.add_argument("--dry", action="store_true", help="real drone, disarmed, thrust 0")
     ap.add_argument("--no-learn", action="store_true", help="disable stick learning of trim")
+    ap.add_argument("--no-laser-ok", action="store_true", help="fly in accel fallback without asking if VL53L1X is missing")
     a = ap.parse_args()
     if a.sim:
         sim_check()
     else:
-        run(a.dry, a.no_learn, a.height)
+        run(a.dry, a.no_learn, a.height, a.no_laser_ok)
