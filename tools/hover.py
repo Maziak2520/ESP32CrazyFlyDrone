@@ -34,7 +34,7 @@ LIFTOFF_VZ = 0.15         # m/s estimated climb that counts as lift-off
 LIFTOFF_Z = 0.05          # m laser height rise above ground that also counts as lift-off
 LIFTOFF_LAG = 0.25        # s; fallback detection delay subtracted from ramp (10000*0.25 = 2500)
 LIFTOFF_LAG_Z = 0.35      # s; laser lift-off detection delay (10000*0.35 = 3500; laser closes loop after)
-CLIMB_S, CLIMB_GAIN = 0.85, 1.07   # fallback-only climb out of ground effect after lift-off
+CLIMB_S, CLIMB_GAIN = 0.80, 1.07   # fallback-only climb out of ground effect after lift-off
 TAU = 1.0                 # s; leaky speed estimate = damping only, cannot run away on bias
 KD = 0.30                 # damping, fraction of hover thrust per m/s (no-sensor fallback)
 KP_Z, KD_Z = 0.36, 0.42   # laser height P and D gains (fraction of hover thrust per m and per m/s)
