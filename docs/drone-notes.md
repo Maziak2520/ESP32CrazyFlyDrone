@@ -233,10 +233,17 @@ CRTP header byte = `port<<4 | 0b11<<2 | channel`. Ports: 0 console, 2 param, 3 c
 - cflib on py3.9 may print `Fatal Python error: _enter_buffered_busy` / exit 134 at shutdown (daemon thread);
   results printed before it are valid.
 
-## Height control without sensor (2026-11-17)
-- `tools/hover.py`: auto take-off (thrust ramp until accelerometer sees lift-off = hover thrust), then pilot
-  holds height with LEFT STICK (centre = hover thrust + damping, +-12 %), A = auto landing, B = kill.
-  `--sim` offline checks, `--dry` real drone disarmed/thrust 0. Logs `logs/hover-*.csv`.
+## Height control without sensor (2026-11-17) & VL53L1X laser height hold (2026-11-25)
+- `tools/hover.py`:
+  - **With VL53L1X (`deck.bcZRanger2 = 1`)**: closed-loop PID height hold using tilt-compensated
+    `range.zrange` (`(mm / 1000) * cos(roll) * cos(pitch)`). Default target height `1.00 m` (`--height`).
+    **LB / RB** trim target height by **-0.10 m / +0.10 m** per press (clamped `0.20..2.00 m`).
+    Left stick up/down smoothly shifts target height at `0.50 m/s`. **A** ramps target height down at
+    `0.35 m/s` and cuts motors when within `5 cm` of ground `z0` or accelerometer touchdown.
+    Logs `z_m` and `target_z` columns in `logs/hover-*.csv`.
+  - **Fallback without sensor (`bcZRanger2 = 0`)**: auto take-off (thrust ramp until accelerometer sees lift-off),
+    pilot holds height with LEFT STICK (+-12 %), LB/RB nudge hover thrust +-1 %.
+  - `--sim` offline checks (both laser 1.0 m and fallback), `--dry` real drone disarmed/thrust 0.
 - Fully automatic hold rejected: 1-D sim shows accelerometer-only hold climbs 2-4.5 m in 3 s from a
   0.005 g bias or 3 % hover-thrust error. Real hold needs VL53L1X (firmware supports, J4 I2C1 + J3 3.3 V) or camera.
 - Dry run on drone: ground vz_est +-0.003 m/s with motors off (threshold 0.15). Not yet flown.
@@ -275,11 +282,12 @@ Power is not needed for wiring; only for the test.
   firmware did not detect the sensor at boot. Log var exists (firmware always exposes it). Suspects:
   XSHUT wiring (GPIO1/J4-8 must go HIGH), I2C address/pull-ups, or 3.3 V. Next check: power drone via USB
   only and read boot log for "Z-down sensor [OK]/[FAIL]" + "VL53L1X I2C connection" lines.
-- 2026-11-24 boot log after RTS reset: I2C1 bus OK (SDA=40, SCL=41, 100 kHz, pull-ups internal) but
-  "ZR2: Z-down sensor [FAIL]" / "VL53L1X I2C connection [FAIL]"; no Model_ID printed. So the bus is up,
-  the sensor does not answer at 0x29. Check in order: XSHUT(J4-8)->GPIO1 actually high, VCC 3.3 V at J3-1
-  (multimeter), GND J4-5, SDA/SCL not swapped (J4-6/7), sensor not in shutdown, module not dead.
-  Note: firmware never toggles XSHUT itself (vl53l1xInit only does I2C), XSHUT must be tied HIGH.
+- 2026-11-24 root cause from photos PXL_20261124_202*: B-Cube V2.0 silkscreen labels every header pin
+  (left header = J4: 1=CS0, 2=SI, 3=CLK, 4=SO, 5=GND, 6=SDA1, 7=SCL1, 8=IO1; right header = J3:
+  1=3V3, 2=SDA0, 3=SCL0, 4=GND, 5=ASCL, 6=ASDA, 7=B2, 8=B1). Wires were swapped between J3/J4.
+- Re-wired: Brown(VCC)->J3-1(3V3), Red(GND)->J4-5(GND), Yellow(SDA)->J4-6(SDA1), Orange(SCL)->J4-7(SCL1),
+  Green(GPIO1) & Blue(XSHUT) left unconnected (CJMCU-531 onboard pull-up holds XSHUT high).
+- Verified live: `deck.bcZRanger2 = 1`, `range.zrange` = 649-662 mm (unit is mm), `posEstAlt.estimatedZ` = 0.656 m.
 
 ## Status
 - [x] USB serial works, boot self-test passed, factory flash backed up (2026-11-16)

@@ -5,3 +5,4 @@
 firmware-backup/*.bin
 vendor/
 logs/
+PXL_*.jpg
