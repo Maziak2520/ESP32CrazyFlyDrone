@@ -50,6 +50,9 @@ LEARN_MIN_THRUST = 35000  # learn only when airborne
 TAKEOFF_Z = 0.50          # m initial hover height after arming in DJI mode
 FLOOR_Z = 0.25            # m descent floor pause height (stops descending and asks to land)
 LAND_HOLD_S = 1.5         # s holding full down / LT at FLOOR_Z to confirm landing
+VBAT_REST_WARN = 3.92     # V resting battery warning before arming (full 1S LiPo is ~4.15-4.20V)
+VBAT_LOAD_WARN = 3.38     # V loaded battery warning during flight (mixer saturation starts below ~3.38V)
+VBAT_LOAD_LAND = 3.26     # V critical loaded battery for >=1.5s -> automatic landing to prevent brownout/crash
 
 
 def learn_trim(trim: dict, roll_cmd: float, pitch_cmd: float, dt: float) -> None:
@@ -261,6 +264,9 @@ def main() -> None:
         use_dji = has_zr and not args.manual_rt and len(state["z_samples"]) >= 5
         g0 = sum(state["acc_samples"]) / len(state["acc_samples"]) if state["acc_samples"] else 1.0
         z0 = sum(state["z_samples"]) / len(state["z_samples"]) if use_dji else 0.0
+        vbat0 = state.get("pm.vbat", 0.0)
+        if 0 < vbat0 < VBAT_REST_WARN:
+            print(f"*** LOW BATTERY AT REST ({vbat0:.2f}V < {VBAT_REST_WARN:.2f}V; full is ~4.18V): expect short flight & altitude drop under load! ***")
         if not has_zr:
             print("WARNING: VL53L1X laser height sensor NOT detected (deck.bcZRanger2=0) - using manual RT throttle")
         elif use_dji:
@@ -280,16 +286,16 @@ def main() -> None:
         shoulders = {pygame.CONTROLLER_BUTTON_LEFTSHOULDER: -1, pygame.CONTROLLER_BUTTON_RIGHTSHOULDER: 1}
         held, sh_held = set(), set()
         armed, a_since, last_print, last = False, None, 0.0, time.time()
-        floor_warned = False
+        floor_warned, low_bat_warned, crit_bat_s = False, False, 0.0
         end = time.time() + args.seconds if args.seconds else float("inf")
 
         def disarm(reason: str) -> None:
-            nonlocal armed, floor_warned
+            nonlocal armed, floor_warned, low_bat_warned, crit_bat_s
             cf.commander.send_stop_setpoint()
             cf.param.set_value("system.forceArm", "0")
             if armed:
                 print(f"\nDISARMED ({reason})")
-            armed, floor_warned = False, False
+            armed, floor_warned, low_bat_warned, crit_bat_s = False, False, False, 0.0
             state["dji"] = None
 
         os.makedirs("logs", exist_ok=True)
@@ -341,6 +347,15 @@ def main() -> None:
                 sp = setpoint(axis(pad, pygame.CONTROLLER_AXIS_RIGHTX), axis(pad, pygame.CONTROLLER_AXIS_RIGHTY),
                               axis(pad, pygame.CONTROLLER_AXIS_LEFTX), rt)
 
+                vbat_now = state.get("pm.vbat", 4.0)
+                if armed and 0 < vbat_now < VBAT_LOAD_WARN and not low_bat_warned:
+                    print(f"\n*** LOW BATTERY UNDER LOAD ({vbat_now:.2f}V): motors near saturation, land soon (press X)! ***")
+                    low_bat_warned = True
+                if armed and 0 < vbat_now < VBAT_LOAD_LAND:
+                    crit_bat_s += dt
+                else:
+                    crit_bat_s = 0.0
+
                 if armed and use_dji and state["dji"] is not None:
                     dji = state["dji"]
                     for btn, sign in shoulders.items():
@@ -349,6 +364,13 @@ def main() -> None:
                             print(f"\ntarget height = {dji.f.target_z:.2f} m (current z = {dji.f.z:.2f} m)")
                     sh_held = {b for b in shoulders if pad.get_button(b)}
                     x_btn = pad.get_button(pygame.CONTROLLER_BUTTON_X)
+                    if crit_bat_s >= 1.5 and dji.f.phase in ("climb", "pilot"):
+                        print(f"\n*** CRITICAL BATTERY ({vbat_now:.2f}V for 1.5s): auto-landing now! ***")
+                        x_btn = True
+                    # Scale down max tilt authority slightly when thrust is near saturation (>54k) so attitude mixer
+                    # does not clip motors and drop altitude during right-stick corrections.
+                    if (dji.f.t_hover or 0) > 53000 or vbat_now < VBAT_LOAD_WARN:
+                        sp = (sp[0] * 0.65, sp[1] * 0.65, sp[2], sp[3])
                     thrust = dji.step(dt, up_cmd, land_btn=x_btn)
                     if dji.at_floor and not floor_warned:
                         print(f"\n*** AT {FLOOR_Z:.2f}m FLOOR: press X to LAND (or hold LT / Left Stick full down 1.5s) ***")
@@ -383,10 +405,11 @@ def main() -> None:
                         z_str = f" z={state.get('z_m', 0):.2f}m"
                     else:
                         z_str = " z=NO_LASER"
+                    bat_tag = "LOW-BAT!" if (armed and vbat_now < VBAT_LOAD_WARN) or (not armed and vbat_now < VBAT_REST_WARN) else ""
                     print(f"\r{'ARMED ' if armed else 'safe  '} trim=({trim['roll']:+.2f},{trim['pitch']:+.2f}) "
                           f"roll={cmd[0]:+5.1f} pitch={cmd[1]:+5.1f} "
                           f"yaw={cmd[2]:+6.1f} thrust={thrust:5d} | "
-                          f"vbat={state.get('pm.vbat', 0):.2f}V att=({state.get('stabilizer.roll', 0):+.0f},"
+                          f"vbat={vbat_now:.2f}V{bat_tag} att=({state.get('stabilizer.roll', 0):+.0f},"
                           f"{state.get('stabilizer.pitch', 0):+.0f}){z_str}   ", end="", flush=True)
                 time.sleep(1 / RATE_HZ)
         except KeyboardInterrupt:

@@ -332,6 +332,8 @@ def run(dry: bool, no_learn: bool, target_z: float, no_laser_ok: bool = False) -
         z0 = sum(s["z_samples"]) / len(s["z_samples"]) if use_z else 0.0
         mode_str = f"LASER height hold target={target_z:.2f} m (ground z0={z0:.3f} m)" if use_z else f"NO LASER (bcZRanger2={int(has_zr)}, z_samples={len(s['z_samples'])})"
         print(f"ground: acc.z={g0:.4f} g  vbat={s['vbat']:.2f} V  trim={trim}  [{mode_str}]")
+        if 0 < s["vbat"] < manual.VBAT_REST_WARN:
+            print(f"*** LOW BATTERY AT REST ({s['vbat']:.2f}V < {manual.VBAT_REST_WARN:.2f}V; full is ~4.18V): expect short flight & altitude drop under load! ***")
         if not use_z and not dry and not no_laser_ok:
             print("\n*** WARNING: VL53L1X laser height sensor NOT detected (deck.bcZRanger2=0) ***")
             print("    Check 4 wires: VCC->J3-1(3V3), GND->J4-5, SDA->J4-6(SDA1), SCL->J4-7(SCL1), then power-cycle drone.")
@@ -363,6 +365,7 @@ def run(dry: bool, no_learn: bool, target_z: float, no_laser_ok: bool = False) -
             held = set()
             shoulders = {pygame.CONTROLLER_BUTTON_LEFTSHOULDER: -1, pygame.CONTROLLER_BUTTON_RIGHTSHOULDER: 1}
             sh_held = set()
+            low_bat_warned, crit_bat_s = False, 0.0
             while f.phase not in ("done", "abort"):
                 now = time.time()
                 dt, last = now - last, now
@@ -377,6 +380,13 @@ def run(dry: bool, no_learn: bool, target_z: float, no_laser_ok: bool = False) -
                     killed = "time cap"
                     break
                 a_btn = pad.get_button(pygame.CONTROLLER_BUTTON_A)
+                if 0 < s["vbat"] < manual.VBAT_LOAD_WARN and not low_bat_warned:
+                    print(f"\n*** LOW BATTERY UNDER LOAD ({s['vbat']:.2f}V): motors near saturation, land soon (press A)! ***")
+                    low_bat_warned = True
+                crit_bat_s = crit_bat_s + dt if (0 < s["vbat"] < manual.VBAT_LOAD_LAND) else 0.0
+                if crit_bat_s >= 1.5 and f.phase in ("climb", "pilot"):
+                    print(f"\n*** CRITICAL BATTERY ({s['vbat']:.2f}V for 1.5s): auto-landing now! ***")
+                    a_btn = True
                 if not pad.attached() or a_btn or now - t0 > MAX_FLIGHT_S:
                     f.land()
                 for btn, (k, step) in dpad.items():
@@ -413,9 +423,10 @@ def run(dry: bool, no_learn: bool, target_z: float, no_laser_ok: bool = False) -
                               int(a_btn), trim["roll"], trim["pitch"], f"{f.t_hover or 0:.0f}",
                               f"{f.z:.3f}" if use_z else "", f"{f.target_z:.2f}"])
                 z_str = f"z={f.z:.2f}/{f.target_z:.2f}m " if use_z else ""
+                bat_tag = "LOW-BAT!" if s["vbat"] < manual.VBAT_LOAD_WARN else ""
                 print(f"\r{f.phase:7s} {z_str}thrust={thrust:5d} vz~{f.vz:+.2f} "
                       f"trim=({trim['roll']:+.2f},{trim['pitch']:+.2f}) "
-                      f"vbat={s['vbat']:.2f}   ", end="", flush=True)
+                      f"vbat={s['vbat']:.2f}V{bat_tag}   ", end="", flush=True)
                 time.sleep(max(0.0, 0.02 - (time.time() - now)))
         except KeyboardInterrupt:
             killed = "Ctrl-C"
