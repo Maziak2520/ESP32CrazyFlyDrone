@@ -125,7 +125,9 @@ class Flight:
         err = self.z_ref - self.z
         self.iz = clamp(self.iz + KI_Z * err * dt, -IZ_MAX, IZ_MAX)
         gain = 1.0 + KP_Z * err + self.iz + KD_Z * (vz_cmd - self.vz_z)
-        return int(clamp(self.t_hover * gain, BAND[0] * self.t_hover, min(BAND[1] * self.t_hover, THRUST_LIMIT)))
+        # During the first 1.2 s after lift-off while climbing toward target_z, never drop below hover thrust!
+        lo = 0.98 if (self.phase == "pilot" and self.t_phase < 1.2 and self.z < self.target_z - 0.08) else BAND[0]
+        return int(clamp(self.t_hover * gain, lo * self.t_hover, min(BAND[1] * self.t_hover, THRUST_LIMIT)))
 
     def step(self, dt: float, stick_up: float = 0.0) -> int:
         """stick_up: -1..1, already dead-zoned. Returns thrust to send."""
@@ -133,9 +135,10 @@ class Flight:
         z_ok = self.has_z and self.z_age < 0.5
         if self.phase == "ramp":
             self.cmd += RAMP * dt
-            lifted = (z_ok and (self.z - self.z0) > LIFTOFF_Z) or (self.cmd >= T_LIFTOFF_MIN and self.vz > LIFTOFF_VZ)
+            lifted_z = z_ok and (self.z - self.z0) > LIFTOFF_Z
+            lifted = lifted_z or (self.cmd >= T_LIFTOFF_MIN and self.vz > LIFTOFF_VZ)
             if lifted:
-                lag = LIFTOFF_LAG_Z if z_ok else LIFTOFF_LAG
+                lag = LIFTOFF_LAG_Z if lifted_z else LIFTOFF_LAG
                 self.t_hover = self.t_hover0 = self.t_lift = self.cmd - RAMP * lag
                 self.z_ref = self.z
                 self.enter("pilot" if z_ok else "climb")

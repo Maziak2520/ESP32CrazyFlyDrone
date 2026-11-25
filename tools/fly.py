@@ -22,6 +22,7 @@ Pass --manual-rt for raw manual RT throttle (no height hold).
 Usage: .venv/bin/python tools/fly.py [--seconds N] [--manual-rt] [--no-learn] [--sim]
 """
 import argparse
+import csv
 import json
 import math
 import os
@@ -124,6 +125,9 @@ class DjiAltitude:
             self.at_floor = False
             f.land()
         if f.phase == "pilot" and f.has_z:
+            # While still climbing to initial 0.50m takeoff height, ignore accidental LT/down unless > 1.2s in pilot
+            if self.initial_climb and f.t_phase < 1.2 and up_cmd < 0:
+                up_cmd = 0.0
             if abs(f.z_ref - TAKEOFF_Z) < 0.01:
                 self.initial_climb = False
             if up_cmd > 0:
@@ -288,7 +292,13 @@ def main() -> None:
             armed, floor_warned = False, False
             state["dji"] = None
 
-        print("ready: hold A 1 s (triggers/sticks released) to arm" + (" & takeoff to 0.50m" if use_dji else "") + ", X = land, B = KILL")
+        os.makedirs("logs", exist_ok=True)
+        path = time.strftime("logs/fly-%Y%m%d-%H%M%S.csv")
+        fh = open(path, "w", newline="")
+        out = csv.writer(fh)
+        out.writerow(["t", "armed", "phase", "thrust", "up_cmd", "z_m", "target_z", "vz_est", "roll", "pitch", "vbat", "trim_roll", "trim_pitch", "t_hover"])
+        t0 = time.time()
+        print(f"ready: hold A 1 s (triggers/sticks released) to arm" + (" & takeoff to 0.50m" if use_dji else "") + f", X = land, B = KILL  (log: {path})")
         try:
             while time.time() < end:
                 now = time.time()
@@ -317,6 +327,7 @@ def main() -> None:
                             cf.commander.send_setpoint(0, 0, 0, 0)
                             time.sleep(0.01)
                         armed = True
+                        last = time.time()  # reset dt after 100ms unlock loop so first ramp step does not jump!
                         print("\nARMED" + (f" -> climbing to {TAKEOFF_Z:.2f}m hover" if use_dji else ""))
                 else:
                     a_since = None
@@ -345,7 +356,8 @@ def main() -> None:
                     elif not dji.at_floor:
                         floor_warned = False
                     if dji.f.phase in ("done", "abort"):
-                        disarm("landed" if dji.f.phase == "done" else "takeoff abort")
+                        why = f"landed (z={dji.f.z:.2f}m)" if dji.f.phase == "done" else f"takeoff abort (cmd={dji.f.cmd:.0f}, z={dji.f.z:.2f}m, vbat={state.get('pm.vbat',0):.2f}V)"
+                        disarm(why)
                         thrust = 0
                 else:
                     thrust = sp[3] if armed else 0
@@ -354,6 +366,12 @@ def main() -> None:
                     learn_trim(trim, sp[0], sp[1], dt)
                 cmd = (sp[0] + trim["roll"], sp[1] + trim["pitch"], sp[2], thrust)
                 cf.commander.send_setpoint(*cmd) if armed else cf.commander.send_setpoint(0, 0, 0, 0)
+                f_obj = state["dji"].f if (use_dji and state["dji"] is not None) else None
+                out.writerow([f"{now - t0:.3f}", int(armed), f_obj.phase if f_obj else "manual", thrust,
+                              f"{up_cmd:.2f}", f"{state.get('z_m', 0):.3f}", f"{f_obj.target_z:.2f}" if f_obj else "",
+                              f"{f_obj.vz:.3f}" if f_obj else "", f"{state.get('roll', 0):.1f}",
+                              f"{state.get('pitch', 0):.1f}", f"{state.get('pm.vbat', 0):.2f}",
+                              f"{trim['roll']:.2f}", f"{trim['pitch']:.2f}", f"{f_obj.t_hover or 0:.0f}" if f_obj else ""])
 
                 if now - last_print > 0.3:
                     last_print = now
@@ -376,8 +394,9 @@ def main() -> None:
         finally:
             disarm("exit")
             log.stop()
+            fh.close()
             json.dump(trim, open(TRIM_FILE, "w"))
-            print(f"\ntrim saved: {trim}")
+            print(f"\ntrim saved: {trim}  log: {path}")
     print("\nbye")
 
 
