@@ -232,8 +232,8 @@ def main() -> None:
         dt = (ts - state["last_ts"]) / 1000 if state["last_ts"] is not None else 0.02
         state["last_ts"] = ts
         z_m = None
+        tilt_cos = max(0.5, math.cos(math.radians(roll)) * math.cos(math.radians(pitch)))
         if "range.zrange" in d and 0 <= d["range.zrange"] < 5000:
-            tilt_cos = max(0.5, math.cos(math.radians(roll)) * math.cos(math.radians(pitch)))
             z_m = (d["range.zrange"] / 1000.0) * tilt_cos
             state["z_m"] = z_m
         if state["dji"] is None:
@@ -241,7 +241,7 @@ def main() -> None:
             if z_m is not None:
                 state["z_samples"].append(z_m)
         else:
-            state["dji"].f.update(d["acc.z"], hover.clamp(dt, 0.001, 0.1), z_m=z_m)
+            state["dji"].f.update(d["acc.z"], hover.clamp(dt, 0.001, 0.1), z_m=z_m, tilt_cos=tilt_cos)
 
     with SyncCrazyflie(URI, cf=Crazyflie(rw_cache="/tmp/cf_cache")) as scf:
         cf = scf.cf

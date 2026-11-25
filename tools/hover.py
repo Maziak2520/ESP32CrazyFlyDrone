@@ -69,14 +69,16 @@ class Flight:
     def __init__(self, g0: float, target_z: float = Z_DEFAULT, has_z: bool = False, z0: float = 0.0):
         self.g0, self.vz, self.az_f = g0, 0.0, g0
         self.has_z, self.z0, self.z, self.vz_z = has_z, z0, z0, 0.0
+        self.tilt_cos = 1.0
         self.z_max_seen, self.z_blocked = z0, False
         self.target_z = clamp(target_z, Z_MIN, Z_MAX)
         self.z_ref, self.iz, self.z_age = z0, 0.0, 0.0
         self.t_hover = self.t_hover0 = self.t_lift = None
         self.phase, self.t_phase, self.cmd = "ramp", 0.0, float(T_START)
 
-    def update(self, az: float, dt: float, z_m: float = None) -> None:
+    def update(self, az: float, dt: float, z_m: float = None, tilt_cos: float = 1.0) -> None:
         """az: body z acceleration in g. z_m: tilt-compensated laser height in metres (if available)."""
+        self.tilt_cos = clamp(tilt_cos, 0.70, 1.0)
         self.vz += (az - self.g0) * G * dt - self.vz * dt / TAU
         self.az_f += 0.3 * (az - self.az_f)
         if z_m is not None and 0.0 <= z_m < 4.0:
@@ -124,8 +126,16 @@ class Flight:
     def _thrust_z(self, dt: float, vz_cmd: float = 0.0) -> int:
         err = self.z_ref - self.z
         self.iz = clamp(self.iz + KI_Z * err * dt, -IZ_MAX, IZ_MAX)
+        # Slow adaptive t_hover learning: if integral iz is sustained, absorb it into t_hover so BAND[1]
+        # (1.22 * t_hover) never starves the drone when battery sags or ground-effect t_hover was low.
+        if self.phase == "pilot" and abs(self.iz) > 0.02:
+            shift = clamp(self.iz * 0.25 * dt, -0.04 * dt, 0.04 * dt)
+            self.t_hover = clamp(self.t_hover * (1.0 + shift), 44000.0, 56000.0)
+            self.iz -= shift
         gain = 1.0 + KP_Z * err + self.iz + KD_Z * (vz_cmd - self.vz_z)
-        # During the first 1.2 s after lift-off while climbing toward target_z, never drop below hover thrust!
+        # Tilt thrust compensation: pitching/rolling tilts thrust vector away from vertical by cos(roll)*cos(pitch),
+        # so divide by tilt_cos to keep vertical lift constant while maneuvering!
+        gain /= self.tilt_cos
         lo = 0.98 if (self.phase == "pilot" and self.t_phase < 1.2 and self.z < self.target_z - 0.08) else BAND[0]
         return int(clamp(self.t_hover * gain, lo * self.t_hover, min(BAND[1] * self.t_hover, THRUST_LIMIT)))
 
@@ -283,8 +293,8 @@ def run(dry: bool, no_learn: bool, target_z: float, no_laser_ok: bool = False) -
         dt = (ts - s["last_ts"]) / 1000 if s["last_ts"] is not None else 0.02
         s["last_ts"] = ts
         z_m = None
+        tilt_cos = max(0.5, math.cos(math.radians(roll)) * math.cos(math.radians(pitch)))
         if "range.zrange" in d and 0 <= d["range.zrange"] < 5000:
-            tilt_cos = max(0.5, math.cos(math.radians(roll)) * math.cos(math.radians(pitch)))
             z_m = (d["range.zrange"] / 1000.0) * tilt_cos
             s["z_m"] = z_m
         if s["flight"] is None:
@@ -292,7 +302,7 @@ def run(dry: bool, no_learn: bool, target_z: float, no_laser_ok: bool = False) -
             if z_m is not None:
                 s["z_samples"].append(z_m)
         else:
-            s["flight"].update(d["acc.z"], clamp(dt, 0.001, 0.1), z_m=z_m)
+            s["flight"].update(d["acc.z"], clamp(dt, 0.001, 0.1), z_m=z_m, tilt_cos=tilt_cos)
 
     os.makedirs("logs", exist_ok=True)
     path = time.strftime("logs/hover-%Y%m%d-%H%M%S.csv")
