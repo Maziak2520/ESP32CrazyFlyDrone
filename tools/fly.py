@@ -114,6 +114,7 @@ class DjiAltitude:
         import hover
         self.h = hover
         self.f = hover.Flight(g0=g0, target_z=TAKEOFF_Z, has_z=True, z0=z0)
+        self.initial_climb = True
         self.at_floor = False
         self.down_hold_s = 0.0
 
@@ -123,12 +124,16 @@ class DjiAltitude:
             self.at_floor = False
             f.land()
         if f.phase == "pilot" and f.has_z:
+            if abs(f.z_ref - TAKEOFF_Z) < 0.01:
+                self.initial_climb = False
             if up_cmd > 0:
+                self.initial_climb = False
                 self.at_floor = False
                 self.down_hold_s = 0.0
                 f.target_z = h.clamp(f.target_z + up_cmd * h.Z_RATE * dt, FLOOR_Z, h.Z_MAX)
                 return f.step(dt, 0.0)
             elif up_cmd < 0:
+                self.initial_climb = False
                 new_z = f.target_z + up_cmd * h.Z_RATE * dt
                 if new_z <= FLOOR_Z:
                     f.target_z = FLOOR_Z
@@ -147,6 +152,8 @@ class DjiAltitude:
                 return f.step(dt, 0.0)
             else:
                 self.down_hold_s = 0.0
+                if not self.initial_climb:
+                    f.target_z = h.clamp(f.z_ref, FLOOR_Z, h.Z_MAX)
                 return f.step(dt, 0.0)
         return f.step(dt, up_cmd)
 
