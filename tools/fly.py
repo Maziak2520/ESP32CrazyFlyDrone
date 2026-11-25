@@ -176,7 +176,7 @@ def sim_dji_check() -> None:
         vz += a * dt
         z = max(0.0, z + vz * dt)
         dji.f.update(1.0 + a / 9.81, dt, z_m=0.02 + z)
-        if abs(t - 4.5) < 0.01:
+        if abs(t - 5.0) < 0.01:
             z_after_climb = z
         if abs(t - 6.6) < 0.01:
             z_after_hold = z
