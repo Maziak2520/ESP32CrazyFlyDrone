@@ -126,10 +126,10 @@ class Flight:
     def _thrust_z(self, dt: float, vz_cmd: float = 0.0) -> int:
         err = self.z_ref - self.z
         self.iz = clamp(self.iz + KI_Z * err * dt, -IZ_MAX, IZ_MAX)
-        # Slow adaptive t_hover learning: if integral iz is sustained, absorb it into t_hover so BAND[1]
-        # (1.22 * t_hover) never starves the drone when battery sags or ground-effect t_hover was low.
-        if self.phase == "pilot" and abs(self.iz) > 0.02:
-            shift = clamp(self.iz * 0.25 * dt, -0.04 * dt, 0.04 * dt)
+        # Adaptive t_hover learning: if integral iz or height deficit is sustained, shift t_hover up/down
+        # so BAND[1] (1.22 * t_hover) never starves the drone when battery sags or ground-effect t_hover was low.
+        if self.phase == "pilot" and abs(self.iz) > 0.01:
+            shift = clamp(self.iz * 0.45 * dt, -0.06 * dt, 0.06 * dt)
             self.t_hover = clamp(self.t_hover * (1.0 + shift), 44000.0, 56000.0)
             self.iz -= shift
         gain = 1.0 + KP_Z * err + self.iz + KD_Z * (vz_cmd - self.vz_z)
@@ -149,7 +149,7 @@ class Flight:
             lifted = lifted_z or (self.cmd >= T_LIFTOFF_MIN and self.vz > LIFTOFF_VZ)
             if lifted:
                 lag = LIFTOFF_LAG_Z if lifted_z else LIFTOFF_LAG
-                self.t_hover = self.t_hover0 = self.t_lift = self.cmd - RAMP * lag
+                self.t_hover = self.t_hover0 = self.t_lift = max(48000.0 if z_ok else 0.0, self.cmd - RAMP * lag)
                 self.z_ref = self.z
                 self.enter("pilot" if z_ok else "climb")
             elif self.cmd > T_LIFTOFF_MAX:
