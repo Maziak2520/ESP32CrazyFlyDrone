@@ -154,8 +154,10 @@ class Flight:
             if z_ok and self.t_phase > 1.5 and (self.z_max_seen - self.z0) < 0.06:
                 self.has_z, self.z_blocked, z_ok = False, True, False
             if z_ok:
-                if abs(stick_up) > 0:
+                if abs( stick_up ) > 0:
                     self.target_z = clamp(self.target_z + stick_up * Z_RATE * dt, Z_MIN, Z_MAX)
+                if self.z_age > dt * 1.5:
+                    return self._thrust_z(dt, vz_cmd=0.0)
                 diff = self.target_z - self.z_ref
                 step_z = clamp(diff, -Z_RATE * dt, Z_RATE * dt)
                 self.z_ref += step_z
