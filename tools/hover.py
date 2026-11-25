@@ -123,9 +123,7 @@ class Flight:
     def _thrust_z(self, dt: float, vz_cmd: float = 0.0) -> int:
         err = self.z_ref - self.z
         self.iz = clamp(self.iz + KI_Z * err * dt, -IZ_MAX, IZ_MAX)
-        # Use fused laser+accel vertical velocity (0.5*vz_z + 0.5*vz) so a laser step cannot invert D-term alone
-        vz_d = 0.5 * self.vz_z + 0.5 * self.vz
-        gain = 1.0 + KP_Z * err + self.iz + KD_Z * (vz_cmd - vz_d)
+        gain = 1.0 + KP_Z * err + self.iz + KD_Z * (vz_cmd - self.vz_z)
         return int(clamp(self.t_hover * gain, BAND[0] * self.t_hover, min(BAND[1] * self.t_hover, THRUST_LIMIT)))
 
     def step(self, dt: float, stick_up: float = 0.0) -> int:
