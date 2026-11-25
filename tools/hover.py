@@ -33,7 +33,7 @@ THRUST_LIMIT = 59500      # firmware caps at 60000
 LIFTOFF_VZ = 0.15         # m/s estimated climb that counts as lift-off
 LIFTOFF_Z = 0.05          # m laser height rise above ground that also counts as lift-off
 LIFTOFF_LAG = 0.27        # s; fallback detection delay subtracted from ramp (10000*0.27 = 2700)
-LIFTOFF_LAG_Z = 0.35      # s; laser lift-off detection delay (10000*0.35 = 3500; laser closes loop after)
+LIFTOFF_LAG_Z = 0.37      # s; laser lift-off detection delay (10000*0.37 = 3700; laser closes loop after)
 CLIMB_S, CLIMB_GAIN = 0.80, 1.07   # fallback-only climb out of ground effect after lift-off
 TAU = 1.0                 # s; leaky speed estimate = damping only, cannot run away on bias
 KD = 0.30                 # damping, fraction of hover thrust per m/s (no-sensor fallback)
