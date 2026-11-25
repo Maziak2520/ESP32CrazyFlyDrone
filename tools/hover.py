@@ -150,8 +150,6 @@ class Flight:
                 self.enter("pilot")
             return self._thrust(CLIMB_GAIN)
         if self.phase == "pilot":
-            # Safety guard: if after 1.5 s in pilot mode laser height has never exceeded z0 + 6 cm (e.g. lens
-            # blocked by tape/wire/hand reading 1-5 cm forever), disable laser mode so thrust cannot pin at max.
             if z_ok and self.t_phase > 1.5 and (self.z_max_seen - self.z0) < 0.06:
                 self.has_z, self.z_blocked, z_ok = False, True, False
             if z_ok:
@@ -160,7 +158,7 @@ class Flight:
                 diff = self.target_z - self.z_ref
                 step_z = clamp(diff, -Z_RATE * dt, Z_RATE * dt)
                 self.z_ref += step_z
-                return self._thrust_z(dt, vz_cmd=step_z / dt if dt > 0 else 0.0)
+                return self._thrust_z(dt)
             self.t_hover = clamp(self.t_hover * (1 + PILOT_RANGE * stick_up * dt / LEARN_S),
                                  self.t_hover0 * (1 - PILOT_RANGE), self.t_hover0 * (1 + PILOT_RANGE))
             return self._thrust(1 + PILOT_RANGE * stick_up)
