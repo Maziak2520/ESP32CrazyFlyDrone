@@ -25,15 +25,16 @@ import random
 import time
 
 G = 9.81
-T_START = 38000           # ramp start (lift-off is ~50-54k with sensor attached)
-RAMP = 8000               # thrust units per second during lift-off search
+T_START = 43000           # ramp start; motor vibration on ground below 50k can fake vz>0.15 if we trigger earlier
+T_LIFTOFF_MIN = 49000     # minimum thrust before accel-only lift-off can trigger (prevents vibration false-trigger at 47k)
+RAMP = 10000              # thrust units per second during lift-off search (43k -> 51k in 0.8 s)
 T_LIFTOFF_MAX = 58500     # no lift-off by here -> abort (battery/props)
 THRUST_LIMIT = 59500      # firmware caps at 60000
 LIFTOFF_VZ = 0.15         # m/s estimated climb that counts as lift-off
 LIFTOFF_Z = 0.05          # m laser height rise above ground that also counts as lift-off
-LIFTOFF_LAG = 0.25        # s; fallback detection delay subtracted from ramp (8000*0.25 = 2000)
-LIFTOFF_LAG_Z = 0.37      # s; laser lift-off detection delay (8000*0.37 = 2960; laser closes loop after)
-CLIMB_S, CLIMB_GAIN = 0.8, 1.07    # fallback-only short climb after lift-off
+LIFTOFF_LAG = 0.25        # s; fallback detection delay subtracted from ramp (10000*0.25 = 2500)
+LIFTOFF_LAG_Z = 0.35      # s; laser lift-off detection delay (10000*0.35 = 3500; laser closes loop after)
+CLIMB_S, CLIMB_GAIN = 0.85, 1.07   # fallback-only climb out of ground effect after lift-off
 TAU = 1.0                 # s; leaky speed estimate = damping only, cannot run away on bias
 KD = 0.30                 # damping, fraction of hover thrust per m/s (no-sensor fallback)
 KP_Z, KD_Z = 0.36, 0.42   # laser height P and D gains (fraction of hover thrust per m and per m/s)
@@ -123,7 +124,7 @@ class Flight:
         z_ok = self.has_z and self.z_age < 0.5
         if self.phase == "ramp":
             self.cmd += RAMP * dt
-            lifted = (z_ok and (self.z - self.z0) > LIFTOFF_Z) or self.vz > LIFTOFF_VZ
+            lifted = (z_ok and (self.z - self.z0) > LIFTOFF_Z) or (self.cmd >= T_LIFTOFF_MIN and self.vz > LIFTOFF_VZ)
             if lifted:
                 lag = LIFTOFF_LAG_Z if z_ok else LIFTOFF_LAG
                 self.t_hover = self.t_hover0 = self.t_lift = self.cmd - RAMP * lag
@@ -218,7 +219,7 @@ def sim(seed: int, bias: float, pilot: bool, pilot_s: float = 6.0, t_true: float
 
 def sim_check() -> None:
     for bias in (-0.005, 0.0, 0.005):
-        for t_true in (40000.0, 44000.0, 50000.0):
+        for t_true in (49000.0, 51500.0, 54000.0):
             lz = [sim(seed, bias, pilot=False, pilot_s=8.0, t_true=t_true, has_z=True, target_z=1.0) for seed in range(1, 5)]
             rs = [sim(seed, bias, pilot=True, t_true=t_true, has_z=False) for seed in range(1, 5)]
             print(f"bias {bias:+.3f} g, hover {t_true:.0f} | LASER 1.0m: max {max(r['max_z'] for r in lz):.2f} m, "
