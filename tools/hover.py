@@ -81,14 +81,15 @@ class Flight:
         self.az_f += 0.3 * (az - self.az_f)
         if z_m is not None and 0.0 <= z_m < 4.0:
             if self.has_z and dt > 0:
-                vz_laser = (z_m - self.z) / dt
-                # Glitch rejection: if airborne (z > 0.35 m) and laser suddenly drops > 0.35 m in one frame
-                # (< -6 m/s downward jump, e.g. rainbow cable swinging across lens or over table edge),
-                # ignore the glitched drop for 0.35 s instead of slamming vz_z negative and blasting max thrust.
-                if self.phase != "ramp" and self.z > 0.35 and (z_m - self.z) < -0.35 and self.z_age < 0.35:
-                    self.z_age += dt
-                    return
-                if abs(vz_laser) < 3.0:
+                dz = z_m - self.z
+                vz_laser = dz / dt
+                # Terrain step (table/box edge under the drone): laser distance jumps > 0.25 m in a single
+                # sample (> 5 m/s) while the drone's accelerometer vertical speed is normal. Copy the terrain
+                # smoothly: accept the new surface distance and reset z_ref to z_m so the 0.50 m/s slew limiter
+                # climbs/descends gently to target_z above the new surface instead of slamming full/min thrust.
+                if self.phase == "pilot" and abs(dz) > 0.25 and abs(vz_laser) > 5.0 and abs(self.vz) < 1.0:
+                    self.z_ref = z_m
+                elif abs(vz_laser) < 3.0:
                     self.vz_z += 0.25 * (vz_laser - self.vz_z)
             self.z, self.z_age = z_m, 0.0
             self.z_max_seen = max(self.z_max_seen, z_m)
@@ -154,10 +155,8 @@ class Flight:
             if z_ok and self.t_phase > 1.5 and (self.z_max_seen - self.z0) < 0.06:
                 self.has_z, self.z_blocked, z_ok = False, True, False
             if z_ok:
-                if abs( stick_up ) > 0:
+                if abs(stick_up) > 0:
                     self.target_z = clamp(self.target_z + stick_up * Z_RATE * dt, Z_MIN, Z_MAX)
-                if self.z_age > dt * 1.5:
-                    return self._thrust_z(dt, vz_cmd=0.0)
                 diff = self.target_z - self.z_ref
                 step_z = clamp(diff, -Z_RATE * dt, Z_RATE * dt)
                 self.z_ref += step_z
