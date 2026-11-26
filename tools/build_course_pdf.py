@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Generate printable 2-page A4 landscape course infographic PDF for ESP32-S2 Crazyflie Drone build.
+"""Generate printable 2-page A4 landscape AI-assisted course infographic PDF for ESP32-S2 Drone build.
+
+Course Pedagogy: Students DO NOT copy pre-made scripts. They partner with an AI Coding Agent to discover,
+build, debug, and verify their own scripts step-by-step from bare PCB to 0.50 m DJI-style laser hover.
 
 Output: docs/course-drone-build-infographic.pdf
 Usage:  python3 tools/build_course_pdf.py
@@ -84,13 +87,13 @@ def paragraph(c, x, y, s, font="Helvetica", size=7.4, color=SLATE, max_w=200, le
 
 def draw_header(c, page_num, subtitle):
     rrect(c, 18, H - 54, W - 36, 40, r=6, fill=NAVY, stroke=None)
-    text(c, 28, H - 31, "ESP32-S2 OPEN-SOURCE DRONE LAB  •  FROM BARE PCB TO 0.50 m LASER HOVER",
-         font="Helvetica-Bold", size=12.5, color=colors.white)
-    text(c, 28, H - 45, subtitle, font="Helvetica", size=8.5, color=colors.HexColor("#93C5FD"))
-    rrect(c, W - 185, H - 47, 157, 26, r=5, fill=GREEN, stroke=None)
-    text(c, W - 106.5, H - 32, "COURSE MISSION OBJECTIVE", font="Helvetica-Bold", size=6.5,
+    text(c, 28, H - 31, "AI-NATIVE HARDWARE ENGINEERING LAB  •  BUILD & FLY AN ESP32-S2 DRONE WITH YOUR AI AGENT",
+         font="Helvetica-Bold", size=12.0, color=colors.white)
+    text(c, 28, H - 45, subtitle, font="Helvetica", size=8.3, color=colors.HexColor("#93C5FD"))
+    rrect(c, W - 195, H - 47, 167, 26, r=5, fill=GREEN, stroke=None)
+    text(c, W - 111.5, H - 32, "COURSE MISSION & AI RULE", font="Helvetica-Bold", size=6.5,
          color=colors.HexColor("#DCFCE7"), align="center")
-    text(c, W - 106.5, H - 42, "Gamepad Flight + 0.50 m Hover & Land", font="Helvetica-Bold", size=7.8,
+    text(c, W - 111.5, H - 42, "No Pre-Made Scripts! Co-Build -> 0.50m Hover", font="Helvetica-Bold", size=7.4,
          color=colors.white, align="center")
 
 
@@ -100,27 +103,27 @@ def draw_footer(c, page_num):
     c.setLineWidth(0.7)
     c.line(18, 22, W - 18, 22)
     c.restoreState()
-    text(c, 20, 11, "Repository: https://github.com/Maziak2520/ESP32CrazyFlyDrone   •   Hardware: B-Cube ESP32-S2-Drone V2.0 + MPU6050 + CJMCU-531 (VL53L1X) + Stadia BLE Controller",
-         font="Helvetica", size=7, color=MUTED)
+    text(c, 20, 11, "AI Engineering Rule: Never write flight code blindly — ask your AI to inspect hardware/docs, build a small probe/sim first, log CSV evidence, and iterate!",
+         font="Helvetica-Bold", size=6.9, color=SLATE)
     text(c, W - 20, 11, f"Page {page_num} of 2", font="Helvetica-Bold", size=7.5, color=SLATE, align="right")
 
 
 def draw_arch_bar(c, x, y, w, h):
     rrect(c, x, y, w, h, r=6, fill=BLUE_BG, stroke=colors.HexColor("#BFDBFE"), lw=1)
-    text(c, x + 10, y + h - 13, "SYSTEM ARCHITECTURE", font="Helvetica-Bold", size=7.5, color=BLUE)
-    text(c, x + 10, y + 6, "Internet stays on Phone USB Tethering (en16) while Mac Wi-Fi (en0) joins Drone AP:",
-         font="Helvetica", size=7, color=SLATE)
+    text(c, x + 10, y + h - 13, "THE AI CO-ENGINEERING LOOP", font="Helvetica-Bold", size=7.5, color=BLUE)
+    text(c, x + 10, y + 6, "Keep internet on Phone USB Tethering while Wi-Fi joins ESP-DRONE_* so your AI stays online!",
+         font="Helvetica", size=6.3, color=SLATE)
 
     nodes = [
-        (x + 295, "1. Stadia Gamepad", "Bluetooth LE (SDL2)", PURPLE, PURPLE_BG),
-        (x + 425, "2. Mac Host (.venv)", "tools/fly.py + cflib", BLUE, colors.white),
-        (x + 565, "3. ESP32-S2 Drone AP", "UDP 192.168.43.42:2390", TEAL, TEAL_BG),
-        (x + 700, "4. Onboard Sensors", "MPU6050 + VL53L1X", GREEN, GREEN_BG),
+        (x + 295, "1. Prompt & Frame", "Give AI docs/photos/goal", PURPLE, PURPLE_BG),
+        (x + 425, "2. AI Builds Probe/Sim", "Small script + self-test", BLUE, colors.white),
+        (x + 565, "3. Run on Real Drone", "Capture logs / serial / CSV", TEAL, TEAL_BG),
+        (x + 700, "4. Feed Evidence to AI", "AI diagnoses & refines", GREEN, GREEN_BG),
     ]
     for i, (nx, title, sub, col, bg) in enumerate(nodes):
         rrect(c, nx, y + 4, 102, h - 8, r=4, fill=bg, stroke=col, lw=1)
-        text(c, nx + 51, y + h - 13, title, font="Helvetica-Bold", size=7.2, color=col, align="center")
-        text(c, nx + 51, y + 7, sub, font="Helvetica", size=6.5, color=SLATE, align="center")
+        text(c, nx + 51, y + h - 13, title, font="Helvetica-Bold", size=7.1, color=col, align="center")
+        text(c, nx + 51, y + 7, sub, font="Helvetica", size=6.4, color=SLATE, align="center")
         if i < len(nodes) - 1:
             ax1 = nx + 103
             ax2 = nodes[i + 1][0] - 2
@@ -135,11 +138,9 @@ def draw_arch_bar(c, x, y, w, h):
 
 
 def draw_step_card(c, x, y, w, h, num, title, badge, badge_col, badge_bg,
-                   why, cmd, pitfall, tip, verify):
+                   why, prompt_task, pitfall, tip, verify):
     rrect(c, x, y, w, h, r=6, fill=CARD_BG, stroke=BORDER, lw=1)
-    # Top accent bar
     rrect(c, x, y + h - 22, w, 22, r=6, fill=badge_bg, stroke=badge_col, lw=1)
-    # Number circle
     c.saveState()
     c.setFillColor(badge_col)
     c.circle(x + 13, y + h - 11, 7.5, fill=1, stroke=0)
@@ -149,50 +150,49 @@ def draw_step_card(c, x, y, w, h, num, title, badge, badge_col, badge_bg,
     text(c, x + w - 6, y + h - 14, badge, font="Helvetica-Bold", size=6.0, color=badge_col, align="right")
 
     cy = y + h - 33
-    # Why / Theory
-    text(c, x + 8, cy, "WHY:", font="Helvetica-Bold", size=6.8, color=badge_col)
-    cy = paragraph(c, x + 30, cy, why, font="Helvetica", size=6.8, color=SLATE, max_w=w - 36, leading=8.4)
+    text(c, x + 8, cy, "GOAL:", font="Helvetica-Bold", size=6.7, color=badge_col)
+    cy = paragraph(c, x + 32, cy, why, font="Helvetica", size=6.7, color=SLATE, max_w=w - 38, leading=8.2)
 
-    # Command box
+    # What to build with your AI (Prompt box)
     cy -= 2
-    cmd_lines = cmd.split("\n")
-    box_h = 7 + len(cmd_lines) * 8.0
-    rrect(c, x + 7, cy - box_h + 6, w - 14, box_h, r=3, fill=CODE_BG, stroke=BORDER, lw=0.6)
+    p_lines = wrap_lines(c, "CO-BUILD WITH AI: " + prompt_task, "Helvetica-Bold", 6.5, w - 22)
+    box_h = 6 + len(p_lines) * 7.9
+    rrect(c, x + 7, cy - box_h + 6, w - 14, box_h, r=3, fill=PURPLE_BG, stroke=colors.HexColor("#DDD6FE"), lw=0.7)
     ty = cy - 2.5
-    for cl in cmd_lines:
-        text(c, x + 10, ty, cl, font="Courier-Bold", size=6.1, color=NAVY)
-        ty -= 8.0
+    for pl in p_lines:
+        text(c, x + 11, ty, pl, font="Helvetica-Bold", size=6.5, color=PURPLE)
+        ty -= 7.9
     cy -= box_h + 4
 
     # Pitfall box
-    pit_lines = wrap_lines(c, "PITFALL: " + pitfall, "Helvetica", 6.5, w - 22)
-    p_h = 6 + len(pit_lines) * 7.8
+    pit_lines = wrap_lines(c, "TRAP TO CATCH: " + pitfall, "Helvetica", 6.4, w - 22)
+    p_h = 6 + len(pit_lines) * 7.7
     rrect(c, x + 7, cy - p_h + 6, w - 14, p_h, r=3, fill=AMBER_BG, stroke=colors.HexColor("#FDE68A"), lw=0.6)
     ty = cy - 2.5
     for pl in pit_lines:
-        text(c, x + 11, ty, pl, font="Helvetica", size=6.5, color=AMBER)
-        ty -= 7.8
+        text(c, x + 11, ty, pl, font="Helvetica", size=6.4, color=AMBER)
+        ty -= 7.7
     cy -= p_h + 4
 
-    # What to observe / Lab note box
-    tip_lines = wrap_lines(c, "OBSERVE: " + tip, "Helvetica", 6.5, w - 22)
-    t_h = 6 + len(tip_lines) * 7.8
+    # Clue / Hardware fact box
+    tip_lines = wrap_lines(c, "KEY CLUE: " + tip, "Helvetica", 6.4, w - 22)
+    t_h = 6 + len(tip_lines) * 7.7
     rrect(c, x + 7, cy - t_h + 6, w - 14, t_h, r=3, fill=LIGHT_BG, stroke=BORDER, lw=0.5)
     ty = cy - 2.5
     for tl in tip_lines:
-        text(c, x + 11, ty, tl, font="Helvetica", size=6.5, color=SLATE)
-        ty -= 7.8
+        text(c, x + 11, ty, tl, font="Helvetica", size=6.4, color=SLATE)
+        ty -= 7.7
 
     # Verify gate pinned to bottom
-    ver_lines = wrap_lines(c, verify, "Helvetica-Bold", 6.6, w - 30)
-    v_h = 8 + len(ver_lines) * 7.8
+    ver_lines = wrap_lines(c, verify, "Helvetica-Bold", 6.5, w - 30)
+    v_h = 8 + len(ver_lines) * 7.7
     vy = y + 5
     rrect(c, x + 7, vy, w - 14, v_h, r=3, fill=GREEN_BG, stroke=colors.HexColor("#86EFAC"), lw=0.8)
     rrect(c, x + 11, vy + v_h - 11, 7, 7, r=1, fill=colors.white, stroke=GREEN, lw=1)
     ty = vy + v_h - 9.5
     for vl in ver_lines:
-        text(c, x + 22, ty, vl, font="Helvetica-Bold", size=6.6, color=GREEN)
-        ty -= 7.8
+        text(c, x + 22, ty, vl, font="Helvetica-Bold", size=6.5, color=GREEN)
+        ty -= 7.7
 
 
 def build_page1(c):
@@ -201,55 +201,54 @@ def build_page1(c):
     c.rect(0, 0, W, H, fill=1, stroke=0)
     c.restoreState()
 
-    draw_header(c, 1, "PAGE 1: 7-STEP ITERATIVE ENGINEERING ROADMAP & VERIFICATION GATES (MOTORS OFF -> FLASH -> SOLDER -> TRIM -> 0.50 m HOVER)")
+    draw_header(c, 1, "PAGE 1: 7 MILESTONES TO CO-BUILD WITH YOUR AI AGENT  (DISCOVER -> BACKUP -> PATCH -> FLASH -> SOLDER -> CALIBRATE -> 0.50 m HOVER)")
     draw_arch_bar(c, 18, H - 92, W - 36, 32)
 
     steps = [
-        (1, "USB Backup & Wi-Fi Probe", "NO MOTORS", BLUE, BLUE_BG,
-         "Connect to bare board before soldering motors. Save factory 4 MB flash image (vendor source is closed) and prove two-way CRTP UDP link.",
-         "esptool.py -p /dev/cu.usbserial-0001 \\\n  -b 115200 read_flash 0 0x400000 bk.bin\n/usr/bin/python3 -I tools/drone_probe.py",
-         "ESP32-S2 has NO Bluetooth. CP2102 corrupts at 460800+ baud (use 115200). Firmware ignores 0xFF null probe (use 0xFC echo).",
-         "Tail green LED blinks fast when UDP link is alive; head red LED indicates low battery.",
-         "CHECK: 4 MB backup saved; join ESP-DRONE_*, probe prints 'echo 10/10, 183 params'."),
+        (1, "Hardware Discovery & Probe", "NO MOTORS", BLUE, BLUE_BG,
+         "Connect bare board via USB & Wi-Fi before soldering motors. Back up factory 4 MB flash and prove two-way UDP communication.",
+         "Give AI the product URL & Espressif ESP-Drone docs. Ask it to: 1) back up 4 MB flash via USB serial, 2) write a zero-dependency UDP link probe.",
+         "ESP32-S2 has NO Bluetooth. High USB baud (460800+) fails with packet noise (use 115200). Firmware ignores 0xFF null packets!",
+         "Drone AP is 192.168.43.42:2390 (pass 12345678), client binds UDP 2399. CRTP packet adds 1 checksum byte = sum(bytes)%256. Use 0xFC echo.",
+         "ACHIEVEMENT: 4 MB factory backup saved; your UDP probe gets 10/10 echo replies & reads Param TOC."),
         (2, "cflib Telemetry & Link Patch", "BENCH TEST", BLUE, BLUE_BG,
-         "Stream 10-50 Hz attitude/battery logs and send test thrust pulses with motors detached to verify the full flight-controller loop.",
-         "/usr/bin/python3 -m venv .venv\n.venv/bin/pip install -e \\\n  vendor/crazyflie-lib-python\n.venv/bin/python tools/drone_link_test.py",
-         "1) macOS UDP sendto() fails with Errno 56 -> patch to send(). 2) Logs die after 2.4 s without 20 ms null keepalive. 3) Upside-down pulse latches stabilizer.stop=1!",
-         "Under emergency stop, motor.m* logs freeze stale while pwm.m*_pwm shows true motor output (0).",
-         "CHECK: Board flat (battery down, roll ~2 deg): pwm hits 17404 -> 0, RESULT: PASS."),
-        (3, "Firmware Upgrade (locSrv)", "ESP-IDF v5.5", PURPLE, PURPLE_BG,
-         "Why reflash? tools/extpos_test.py failed because upstream comm.c:61 had '//locSrvInit();' commented out! Enable it & flash release image.",
-         "./tools/flash_drone.sh\n.venv/bin/python tools/extpos_test.py",
-         "New firmware boots DISARMED for safety (requires system.forceArm=1). Never RTS-reset via USB while powered or MPU6050 I2C locks in boot loop.",
-         "flash_drone.sh automatically backs up each new drone's 4 MB factory flash by MAC before writing.",
-         "CHECK: 187 params (adds locSrv); extpos_test.py error = 0.000 m, RESULT: PASS."),
+         "Stream live 50 Hz roll/pitch/vbat logs and send a 1 s low-thrust test pulse with motors detached to verify the control loop.",
+         "Ask AI to install Espressif's crazyflie-lib-python fork (esp-drone branch) and write a script that streams logs & pulses thrust 0->12000->0.",
+         "1) macOS UDP sendto() crashes with Errno 56. 2) Log stream dies after 2.4 s! 3) Pulsing thrust while board is upside-down latches emergency stop!",
+         "Have AI debug why logs stop at 2.4 s (drone only transmits while receiving host packets -> add 20 ms null keepalive in udpdriver.py). Log pwm.m*_pwm.",
+         "ACHIEVEMENT: Board upright (battery down): logs stream continuously & PWM pulses 0 -> >14000 -> 0."),
+        (3, "Source Audit & Firmware Flash", "ESP-IDF v5.5", PURPLE, PURPLE_BG,
+         "Why build custom firmware? Test if external position (CRTP port 6) works for future camera/swarm — then find out why firmware ignores it!",
+         "Ask AI to write an extpos test, then search espressif/esp-drone C source for why port 6 / locSrv is dead, patch it, build & flash.",
+         "In upstream comm.c:61, '//locSrvInit();' is commented out & crtp_localization_service.c is missing from CMake! Never RTS-reset via USB while powered.",
+         "Match vendor 715 motor config (thrustBase=42000). New upstream firmware boots DISARMED for safety — your scripts must set system.forceArm=1.",
+         "ACHIEVEMENT: Custom firmware flashed & verified; extpos test converges to sent (x,y,z) with 0.000 m error."),
         (4, "Solder Motors & Spin Check", "PROPS", TEAL, TEAL_BG,
-         "Solder 4 brushed 715 motors. Spin M1..M4 one by one at 10% power to verify corner mapping and CW/CCW rotation before fitting A/B props.",
-         ".venv/bin/python tools/motor_test.py 6500 3\n# Single motor spin until stopped:\n.venv/bin/python tools/motor_spin.py 1",
-         "Our first test had ALL 4 motors spinning CW -> drone couldn't lift! Diagonal pairs MUST counter-rotate: swap wires on M1 & M3.",
-         "Install Prop B on CCW motors (M1, M3) and Prop A on CW motors (M2, M4) so all 4 push air DOWN.",
-         "CHECK: Top view: M1(FR)=CCW/Prop B, M2(RR)=CW/Prop A, M3(RL)=CCW/Prop B, M4(FL)=CW/Prop A."),
+         "Solder 4 brushed motors (props OFF). Build a per-motor spin tool to verify corner positions and CW/CCW rotation before fitting A/B props.",
+         "Ask AI to find the firmware's direct motor-override parameters (motorPowerSet) and write a script to spin M1..M4 one by one at 10% power.",
+         "If all 4 motors spin the same way (or diagonal pairs don't match), the drone spins on the ground and 2 props push air UP so it never lifts off!",
+         "Look from above: M1(Front-Right) & M3(Rear-Left) must spin CCW (Prop B); M2(Rear-Right) & M4(Front-Left) must spin CW (Prop A). Swap wires to reverse.",
+         "ACHIEVEMENT: All 4 motors spin in correct CW/CCW directions; Props A & B installed on matching corners."),
         (5, "Gamepad & 3-Layer Trim", "CALIBRATE", TEAL, TEAL_BG,
-         "Pair Stadia BLE controller. Cancel mounting tilt (~2 deg) so the drone lifts straight up instead of sliding sideways at 1 m/s.",
-         ".venv/bin/python tools/gamepad_check.py 10\n.venv/bin/python tools/calibrate_level.py",
-         "Floor contact != motor plane: rest drone on 4 equal supports under motor pods and rotate 0/90/180/270 deg so floor slope cancels.",
-         "In flight, accelerometer feels thrust along body axis (blind to tilt); learn_trim() absorbs steady right-stick corrections into fly_trim.json.",
-         "CHECK: fit spread < 0.3 deg; fly_trim.json saved; D-pad nudges 0.25 deg + in-flight stick learning."),
-        (6, "Wire VL53L1X Laser Sensor", "I2C1 + 3V3", AMBER, AMBER_BG,
-         "1-D physics sim proved accelerometer-only height hold runs away to 3-4 m in 3 s from 0.005 g bias. Add downward VL53L1X laser ranger (40 Hz).",
-         "# Verify sensor detected at boot:\n.venv/bin/python tools/fly.py --seconds 2",
-         "Left header J4 has NO 3.3V pin! Wire VCC->J3 Pin 1 (3V3), GND->J4 Pin 5, SDA->J4 Pin 6 (SDA1), SCL->J4 Pin 7 (SCL1). Peel yellow lens film!",
-         "Firmware only probes VL53L1X once at power-on boot. Always power-cycle battery after touching sensor wires.",
-         "CHECK: deck.bcZRanger2 = 1 at boot; lifting drone by hand updates live z=0.20m -> 0.65m."),
-        (7, "0.50 m DJI Hover & Auto-Land", "FINAL MISSION", GREEN, GREEN_BG,
-         "Closed-loop laser PID holds 0.50 m with tilt-thrust compensation (1/cos R*cos P), adaptive hover thrust, terrain-following & 0.25 m floor pause.",
-         ".venv/bin/python tools/hover.py --sim\n.venv/bin/python tools/fly.py --sim\n.venv/bin/python tools/fly.py",
-         "When loaded vbat drops < 3.38V (LOW-BAT!), hover needs ~56k+ thrust -> big tilts clip motors at 100% PWM. Fly on charged battery (>4.05V rest).",
-         "Every flight saves full 50 Hz telemetry to logs/fly-YYYYMMDD-HHMMSS.csv for post-flight analysis.",
-         "FINAL ACHIEVEMENT: Hold A (1 s) -> auto-takeoff to 0.50 m hover -> RT/LT climb/descend -> X lands!"),
+         "Pair Bluetooth gamepad. Solve the 'drifts sideways at 1 m/s on takeoff' problem caused by a ~2 deg board/battery mounting offset.",
+         "Brainstorm an auto-trim strategy with AI: 1) 4-rotation ground calibration script, 2) D-pad 0.25 deg live trim, 3) in-flight stick learning.",
+         "Why can't the accelerometer auto-trim tilt in flight? In hover, thrust points along the body axis, so a tilted drifting drone feels 0 lateral accel!",
+         "Rest drone on 4 equal supports under the motor pods and average 0/90/180/270 deg readings so floor slope cancels out. Watch pitch sign (+pitch=forward).",
+         "ACHIEVEMENT: Gamepad script reads sticks; 4-way ground calibration & D-pad trim give a level liftoff."),
+        (6, "Sim First -> Wire Laser Sensor", "I2C1 + 3V3", AMBER, AMBER_BG,
+         "Ask AI to build a 1-D vertical physics simulator before flying height-hold — prove why accelerometer-only hold fails, then wire VL53L1X laser.",
+         "1) Have AI simulate accel-only height hold with 0.005 g bias. 2) Show AI photos of B-Cube V2.0 headers & CJMCU-531 to map pins and verify range.zrange.",
+         "Trap 1: Sim proves accel-only hold climbs to 3-4 m in 3 s! Trap 2: Left header J4 has NO 3.3V pin! Trap 3: Yellow film or loose wire in 27 deg laser cone.",
+         "Read PCB silkscreen: VCC->Right Header J3 Pin 1 (3V3); GND/SDA1/SCL1->Left Header J4 Pins 5, 6, 7. Power-cycle drone so deck.bcZRanger2=1 at boot.",
+         "ACHIEVEMENT: deck.bcZRanger2 = 1 at boot; moving drone up/down by hand updates live laser height in m."),
+        (7, "0.50 m DJI Hover & Log Audit", "FINAL MISSION", GREEN, GREEN_BG,
+         "Co-design a DJI-style flight controller: auto-takeoff to 0.50 m hover, RT/LT (or Left Stick) climb/descend, release-to-hold, 0.25 m floor pause & auto-land.",
+         "Fly, log 50 Hz CSV telemetry, and ask AI to diagnose real flight anomalies from your CSV logs (table edges, cable glitches, steering altitude drop).",
+         "Why does steering drop altitude late in a flight? When loaded vbat < 3.38V, hover needs ~56k+ thrust -> roll/pitch clips boosted motors at 100% PWM!",
+         "Add tilt-thrust boost (1/(cos R*cos P)), online adaptive hover-thrust learning, smooth 0.5 m/s terrain-following over tables, and <3.38V LOW-BAT alerts.",
+         "FINAL ACHIEVEMENT: Hold A -> auto-takeoff to steady 0.50 m hover -> climb/descend -> 0.25 m floor pause -> X lands!"),
     ]
 
-    # Row 1: Steps 1..4 (4 cards across)
     margin = 18
     gap = 8
     w4 = (W - 2 * margin - 3 * gap) / 4.0
@@ -259,7 +258,6 @@ def build_page1(c):
         s = steps[i]
         draw_step_card(c, margin + i * (w4 + gap), y_row1, w4, h_row1, *s)
 
-    # Row 2: Steps 5..7 (3 wider cards across)
     w3 = (W - 2 * margin - 2 * gap) / 3.0
     h_row2 = 214
     y_row2 = 28
@@ -271,13 +269,11 @@ def build_page1(c):
 
 
 def draw_rot_arc(c, cx, cy, r, ccw, col):
-    """Draw a vector curved rotation arc with arrowhead around motor center."""
     c.saveState()
     c.setStrokeColor(col)
     c.setFillColor(col)
     c.setLineWidth(1.3)
     c.arc(cx - r, cy - r, cx + r, cy + r, startAng=25, extent=130)
-    # Arrowhead at end of arc
     ang = math.radians(155 if ccw else 25)
     ax = cx + r * math.cos(ang)
     ay = cy + r * math.sin(ang)
@@ -301,7 +297,6 @@ def draw_drone_diagram(c, x, y, w, h):
     text(c, x + 10, y + h - 14, "1. TOP-DOWN MOTOR & PROPELLER MAP (QUAD_FORMATION_X)", font="Helvetica-Bold", size=8.2, color=TEAL)
 
     cx, cy = x + w * 0.50, y + h * 0.51
-    # Front arrow
     c.saveState()
     c.setStrokeColor(RED)
     c.setFillColor(RED)
@@ -317,7 +312,6 @@ def draw_drone_diagram(c, x, y, w, h):
     text(c, cx, cy + 84, "FRONT (Camera Connector)", font="Helvetica-Bold", size=7, color=RED, align="center")
     text(c, cx, cy - 86, "TAIL (PCB Wi-Fi Antenna)", font="Helvetica-Bold", size=6.8, color=SLATE, align="center")
 
-    # X arms
     arm = 52
     c.saveState()
     c.setStrokeColor(SLATE)
@@ -326,21 +320,17 @@ def draw_drone_diagram(c, x, y, w, h):
     c.line(cx - arm, cy + arm, cx + arm, cy - arm)
     c.restoreState()
 
-    # Center PCB
     rrect(c, cx - 26, cy - 30, 52, 60, r=4, fill=NAVY, stroke=SLATE, lw=1.2)
     text(c, cx, cy + 12, "ESP32-S2", font="Helvetica-Bold", size=6.5, color=colors.white, align="center")
     text(c, cx, cy + 2, "MPU6050", font="Helvetica", size=6, color=colors.HexColor("#93C5FD"), align="center")
     text(c, cx, cy - 8, "Battery Down", font="Helvetica-Oblique", size=5.5, color=colors.HexColor("#CBD5E1"), align="center")
-    # J4 / J3 headers on PCB
     rrect(c, cx - 23, cy - 22, 6, 32, r=1, fill=AMBER, stroke=None)
     text(c, cx - 15, cy - 19, "J4", font="Helvetica-Bold", size=5.5, color=AMBER)
     rrect(c, cx + 17, cy - 22, 6, 32, r=1, fill=BLUE, stroke=None)
     text(c, cx + 11, cy - 19, "J3", font="Helvetica-Bold", size=5.5, color=colors.HexColor("#60A5FA"))
-    # USB-C on right edge
     rrect(c, cx + 23, cy + 8, 6, 14, r=1, fill=colors.HexColor("#94A3B8"), stroke=NAVY, lw=0.6)
     text(c, cx + 31, cy + 13, "USB-C", font="Helvetica-Bold", size=5.8, color=SLATE)
 
-    # 4 Motors: (dx, dy, name, dir_str, ccw, prop, col, bg)
     motors = [
         (+arm, +arm, "M1 (GPIO5)", "CCW", True,  "PROP B", BLUE, BLUE_BG),
         (+arm, -arm, "M2 (GPIO6)", "CW",  False, "PROP A", AMBER, AMBER_BG),
@@ -360,11 +350,10 @@ def draw_drone_diagram(c, x, y, w, h):
         text(c, mx, my - 1, f"({rot})", font="Helvetica-Bold", size=7.5, color=col, align="center")
         text(c, mx, my - 11, prop, font="Helvetica-Bold", size=6.8, color=GREEN if "B" in prop else PURPLE, align="center")
 
-    # Bottom rule note
     rrect(c, x + 8, y + 6, w - 16, 28, r=4, fill=AMBER_BG, stroke=colors.HexColor("#FDE68A"), lw=0.7)
     text(c, x + 12, y + 23, "Golden Rule: Diagonal motors MUST spin the same way (M1+M3 = CCW/Prop B; M2+M4 = CW/Prop A).",
          font="Helvetica-Bold", size=6.3, color=AMBER)
-    text(c, x + 12, y + 12, "If any motor spins the wrong way in 'tools/motor_test.py 6500 3', swap its two soldered motor wires.",
+    text(c, x + 12, y + 12, "If any motor spins the wrong way in your single-motor test script, swap its two soldered motor wires.",
          font="Helvetica", size=6.3, color=SLATE)
 
 
@@ -445,18 +434,18 @@ def draw_wiring_diagram(c, x, y, w, h):
 def draw_gamepad_cockpit(c, x, y, w, h):
     rrect(c, x, y, w, h, r=6, fill=CARD_BG, stroke=BORDER, lw=1)
     rrect(c, x, y + h - 22, w, 22, r=6, fill=BLUE_BG, stroke=BLUE, lw=1)
-    text(c, x + 10, y + h - 14, "3. DJI-STYLE GAMEPAD FLIGHT COCKPIT  (.venv/bin/python tools/fly.py)", font="Helvetica-Bold", size=8.2, color=BLUE)
+    text(c, x + 10, y + h - 14, "3. TARGET FLIGHT COCKPIT SPEC  (Design This With Your AI Agent!)", font="Helvetica-Bold", size=8.2, color=BLUE)
 
     controls = [
-        ("Hold A (1.0 s)", "ARM & AUTO-TAKEOFF", "Unlocks motors & climbs smoothly to 0.50 m laser hover.", GREEN, GREEN_BG),
-        ("RT or Left Stick UP", "CLIMB (+0.50 m/s)", "Climbs while held; release = locks & holds current height!", BLUE, BLUE_BG),
-        ("LT or Left Stick DOWN", "DESCEND (-0.40 m/s)", "Descends while held; stops automatically at 0.25 m safety floor.", BLUE, BLUE_BG),
-        ("LB / RB Bumpers", "HEIGHT TRIM -/+10 cm", "Clicks target hover altitude down/up by 0.10 m (0.20..2.00 m).", TEAL, TEAL_BG),
-        ("X Button (or Hold Down)", "AUTO-LAND & DISARM", "At 0.25 m floor pause (or any height), smoothly lands & disarms.", PURPLE, PURPLE_BG),
+        ("Hold A (1.0 s)", "ARM & AUTO-TAKEOFF", "Sets system.forceArm=1 & climbs smoothly to 0.50 m laser hover.", GREEN, GREEN_BG),
+        ("RT or Left Stick UP", "CLIMB (+0.50 m/s)", "Climbs while held; release = locks & holds current laser height!", BLUE, BLUE_BG),
+        ("LT or Left Stick DOWN", "DESCEND (-0.40 m/s)", "Descends while held; pauses automatically at 0.25 m safety floor.", BLUE, BLUE_BG),
+        ("LB / RB Bumpers", "HEIGHT TRIM -/+10 cm", "Nudges target hover altitude down/up by 0.10 m (0.20..2.00 m).", TEAL, TEAL_BG),
+        ("X Button (or Hold Down)", "AUTO-LAND & DISARM", "At 0.25 m floor pause (or any height), descends gently & disarms.", PURPLE, PURPLE_BG),
         ("Right Stick (X / Y)", "ROLL & PITCH STEERING", "Tilts drone left/right/forward/back with 1/(cos R*cos P) lift boost.", NAVY, CODE_BG),
         ("Left Stick (Left/Right)", "YAW ROTATION", "Rotates heading counter-clockwise / clockwise (up to 90 deg/s).", NAVY, CODE_BG),
-        ("D-Pad (Up/Down/L/R)", "0.25 deg TILT TRIM", "Nudges trim toward push direction + auto stick learning.", AMBER, AMBER_BG),
-        ("B Button (Any Time)", "EMERGENCY KILL", "Cuts all 4 motors to 0 immediately & disarms.", RED, RED_BG),
+        ("D-Pad (Up/Down/L/R)", "0.25 deg TILT TRIM", "Nudges roll/pitch trim toward push direction + auto stick learning.", AMBER, AMBER_BG),
+        ("B Button (Any Time)", "EMERGENCY KILL", "Cuts all 4 motors to 0 immediately & sets system.forceArm=0.", RED, RED_BG),
     ]
 
     cy = y + h - 42
@@ -472,19 +461,17 @@ def draw_gamepad_cockpit(c, x, y, w, h):
 def draw_physics_box(c, x, y, w, h):
     rrect(c, x, y, w, h, r=6, fill=CARD_BG, stroke=BORDER, lw=1)
     rrect(c, x, y + h - 22, w, 22, r=6, fill=GREEN_BG, stroke=GREEN, lw=1)
-    text(c, x + 10, y + h - 14, "4. FLIGHT TELEMETRY, BATTERY PHYSICS & TROUBLESHOOTING GUIDE", font="Helvetica-Bold", size=8.2, color=GREEN)
+    text(c, x + 10, y + h - 14, "4. HOW TO WORK WITH YOUR AI AGENT & DIAGNOSE FLIGHT PHYSICS", font="Helvetica-Bold", size=8.2, color=GREEN)
 
     items = [
-        ("Why Steering on a Low Battery Drops Altitude (Mixer Saturation):",
-         "A 1S LiPo starts at ~4.18 V at rest and drops ~0.5 V under load. When loaded vbat > 3.40 V, hover needs ~49,000-52,000 thrust (~78% PWM), leaving plenty of headroom. Once loaded vbat falls below 3.38 V (LOW-BAT!), hover needs 56,000-59,500 (~92%+ PWM). Rolling/pitching adds +8,000 to two motors (which clip at the 65,535 ceiling) and subtracts -8,000 from the opposite two motors — reducing total lift! Solution: fly.py warns at <3.92 V rest / <3.38 V load, scales max tilt to 65%, and auto-lands at <3.26 V."),
-        ("Why Tilt-Thrust Compensation (1 / (cos(roll) * cos(pitch))) Is Needed:",
-         "Tilting by 15 deg roll + 12 deg pitch tilts the thrust vector away from vertical, losing ~5.5% of vertical lift (~2,800 thrust) and angling the laser beam (distance = z / (cos R * cos P)). Both hover.py and fly.py multiply laser distance by cos R*cos P and boost thrust by 1/(cos R*cos P)."),
-        ("How Smooth Terrain-Following Works Over a Table Edge:",
-         "If the drone flies over a 60 cm table while hovering at 1.00 m, laser z_m jumps from 1.00 m to 0.40 m in 20 ms while accelerometer vertical speed is ~0. The controller resets z_ref to 0.40 m (avoiding a 100% throttle spike) and slews smoothly at 0.50 m/s up to 1.00 m above the table."),
-        ("Quick Diagnostic Checklist When Something Misbehaves:",
-         "• Drone prints 'z=NO_LASER' or 'bcZRanger2=0': Re-seat the 4 sensor wires (J3-1, J4-5,6,7) and POWER-CYCLE the drone (sensor only inits at boot).\n"
-         "• Drone shoots up to ceiling in laser mode: Laser reads <0.05 m because yellow film is on lens or rainbow wire is hanging in the 27 deg cone.\n"
-         "• 'Address already in use' (UDP 2399): Close any other running fly.py / hover.py terminal window before starting a new script."),
+        ("1. The AI Co-Engineering Playbook (How We Built This From Scratch):",
+         "• Never ask AI for 'one giant drone program'. Break it into verifiable layers: UDP Probe -> cflib Log/Pulse Test -> Motor Spin Test -> Gamepad Reader -> 4-Way Level Calibrator -> 1-D Physics Sim -> Laser Hover Controller.\n"
+         "• Always log 50 Hz CSV telemetry (t, phase, thrust, z_m, target_z, vz, roll, pitch, vbat). When a flight misbehaves, feed the CSV log to your AI and ask it to prove the cause from the numbers before changing code!"),
+        ("2. Why Steering on a Low Battery Drops Altitude (Mixer Saturation):",
+         "A 1S LiPo starts at ~4.18 V at rest and sags ~0.5 V under load. When loaded vbat > 3.40 V, hover needs ~49,000-52,000 thrust (~78% PWM). Once loaded vbat drops below 3.38 V, hover needs 56,000-59,500 (~92%+ PWM). Rolling/pitching adds +8,000 to two motors (which clip at the 65,535 ceiling) and subtracts -8,000 from the opposite two motors — reducing total lift! Have your AI add low-battery warnings (<3.92V rest / <3.38V load), tilt scaling, and <3.26V auto-land."),
+        ("3. Tilt-Thrust Compensation & Smooth Terrain-Following Over Tables:",
+         "• Tilting by (roll, pitch) tilts both the laser beam and thrust vector: multiply laser range by cos(R)*cos(P) and boost thrust by 1/(cos(R)*cos(P)).\n"
+         "• When flying over a table edge (laser distance jumps >25 cm in 20 ms while accel vz is small), reset reference height z_ref to the new surface distance and slew smoothly at 0.50 m/s to copy the terrain without a throttle spike."),
     ]
 
     cy = y + h - 34
@@ -492,8 +479,8 @@ def draw_physics_box(c, x, y, w, h):
         text(c, x + 10, cy, heading, font="Helvetica-Bold", size=7.0, color=NAVY)
         cy -= 9.5
         for line in body.split("\n"):
-            cy = paragraph(c, x + 14, cy, line, font="Helvetica", size=6.5, color=SLATE, max_w=w - 24, leading=8.2)
-        cy -= 4
+            cy = paragraph(c, x + 14, cy, line, font="Helvetica", size=6.4, color=SLATE, max_w=w - 24, leading=8.1)
+        cy -= 3.5
 
 
 def build_page2(c):
@@ -502,7 +489,7 @@ def build_page2(c):
     c.rect(0, 0, W, H, fill=1, stroke=0)
     c.restoreState()
 
-    draw_header(c, 2, "PAGE 2: WORKBENCH HARDWARE REFERENCE  •  MOTOR & PROP MAP, J3/J4 LASER PINOUT, DJI GAMEPAD COCKPIT & BATTERY PHYSICS")
+    draw_header(c, 2, "PAGE 2: HARDWARE & AI CO-DESIGN SPECS  •  MOTOR & PROP MAP, J3/J4 LASER PINOUT, TARGET COCKPIT & FLIGHT PHYSICS")
 
     margin = 18
     gap = 10
@@ -526,7 +513,7 @@ def main():
     os.makedirs("docs", exist_ok=True)
     out_path = os.path.join("docs", "course-drone-build-infographic.pdf")
     c = canvas.Canvas(out_path, pagesize=landscape(A4))
-    c.setTitle("ESP32-S2 Drone Build & 0.50m Laser Hover Course Infographic")
+    c.setTitle("AI-Native ESP32-S2 Drone Build & 0.50m Laser Hover Course Infographic")
     c.setAuthor("ESP32CrazyFlyDrone Course")
     build_page1(c)
     c.showPage()
