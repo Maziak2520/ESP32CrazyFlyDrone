@@ -18,7 +18,6 @@ Flight log CSV: logs/hover-*.csv
 """
 import argparse
 import csv
-import json
 import math
 import os
 import random
@@ -57,6 +56,7 @@ SETTLE_S = 2.0
 TOUCH_G = 0.4
 MAX_TILT = 35.0
 MAX_FLIGHT_S = 60.0
+Z_STALE_S = 0.5           # s without a valid laser sample -> laser not usable
 
 
 def clamp(x, lo, hi):
@@ -75,11 +75,13 @@ class Flight:
         self.z_ref, self.iz, self.z_age = z0, 0.0, 0.0
         self.t_hover = self.t_hover0 = self.t_lift = None
         self.phase, self.t_phase, self.cmd = "ramp", 0.0, float(T_START)
+        self.z_was_ok, self.land_locked, self.desc_max_s = True, False, DESC_MAX_S
 
     def update(self, az: float, dt: float, z_m: float = None, tilt_cos: float = 1.0) -> None:
         """az: body z acceleration in g. z_m: tilt-compensated laser height in metres (if available)."""
         self.tilt_cos = clamp(tilt_cos, 0.70, 1.0)
-        self.vz += (az - self.g0) * G * dt - self.vz * dt / TAU
+        # thrust acts along body z, so vertical specific force is az * cos(tilt)
+        self.vz += (az * self.tilt_cos - self.g0) * G * dt - self.vz * dt / TAU
         self.az_f += 0.3 * (az - self.az_f)
         if z_m is not None and 0.0 <= z_m < 4.0:
             if self.has_z and dt > 0:
@@ -101,10 +103,15 @@ class Flight:
     def enter(self, phase: str) -> None:
         self.phase, self.t_phase = phase, 0.0
 
-    def land(self) -> None:
+    def land(self, force: bool = False) -> None:
+        """force=True (auto-land: battery, timeout, controller lost) cannot be cancelled by stick up."""
+        self.land_locked |= force
         if self.phase == "ramp":
             self.enter("done")
         elif self.phase in ("climb", "pilot"):
+            # laser descent must have time to reach the ground from any height before the settle cut-off
+            h = max(self.z, self.z_ref) - self.z0 if self.has_z else 0.0
+            self.desc_max_s = max(DESC_MAX_S, h / LAND_RATE + 2.0)
             self.enter("descend")
 
     def nudge(self, sign: int) -> None:
@@ -142,7 +149,12 @@ class Flight:
     def step(self, dt: float, stick_up: float = 0.0) -> int:
         """stick_up: -1..1, already dead-zoned. Returns thrust to send."""
         self.t_phase += dt
-        z_ok = self.has_z and self.z_age < 0.5
+        z_ok = self.has_z and self.z_age < Z_STALE_S
+        if z_ok and not self.z_was_ok:
+            # laser back after a dropout: hold where we are, not the stale reference
+            self.z_ref = self.z
+            self.target_z = clamp(self.z, Z_MIN, Z_MAX)
+        self.z_was_ok = z_ok
         if self.phase == "ramp":
             self.cmd += RAMP * dt
             lifted_z = z_ok and (self.z - self.z0) > LIFTOFF_Z
@@ -176,17 +188,17 @@ class Flight:
                                  self.t_hover0 * (1 - PILOT_RANGE), self.t_hover0 * (1 + PILOT_RANGE))
             return self._thrust(1 + PILOT_RANGE * stick_up)
         if self.phase == "descend":
-            if stick_up > 0.8:
+            if stick_up > 0.8 and not self.land_locked:
                 self.z_ref = self.z
                 self.enter("pilot")
                 return self._thrust_z(dt) if z_ok else self._thrust(1.0)
             if self.t_phase > 0.3 and (touched or (z_ok and self.z <= self.z0 + LAND_DONE_Z and abs(self.vz_z) < 0.25)):
                 self.enter("done")
                 return 0
-            if z_ok and self.t_phase < DESC_MAX_S:
+            if z_ok and self.t_phase < self.desc_max_s:
                 self.z_ref = max(self.z0, self.z_ref - LAND_RATE * dt)
                 return self._thrust_z(dt, vz_cmd=-LAND_RATE)
-            if self.t_phase >= DESC_MAX_S:
+            if self.t_phase >= (self.desc_max_s if z_ok else DESC_MAX_S):
                 self.enter("settle")
             else:
                 gain = max(DESC_MIN, DESC_GAIN - DESC_SLOPE * self.t_phase)
@@ -205,7 +217,7 @@ def sim(seed: int, bias: float, pilot: bool, pilot_s: float = 6.0, t_true: float
     random.seed(seed)
     dt, z, vz, latency, seen = 0.02, 0.0, 0.0, [0, 0], [(0.0, 0.0)] * 15
     f = Flight(g0=1.0, target_z=target_z, has_z=has_z, z0=0.02)
-    max_z, touch_v, hold_err = 0.0, 0.0, []
+    max_z, touch_v, hold_err, settled = 0.0, 0.0, [], False
     for _ in range(int(40 / dt)):
         stick = 0.0
         z_seen, vz_seen = seen[0]
@@ -233,12 +245,13 @@ def sim(seed: int, bias: float, pilot: bool, pilot_s: float = 6.0, t_true: float
         z_meas = max(0.01, 0.02 + z + random.gauss(0, 0.005)) if has_z else None
         f.update(1 + a / G + spike + bias + random.gauss(0, 0.02), dt, z_m=z_meas)
         max_z = max(max_z, z)
+        settled |= f.phase == "settle"
         if f.phase == "pilot" and f.t_phase > 3.5:
             hold_err.append(abs(z + 0.02 - target_z))
         if f.phase in ("done", "abort"):
             break
     return {"phase": f.phase, "t_hover": f.t_hover, "max_z": max_z, "touch_v": touch_v, "final_z": z,
-            "hold_err": max(hold_err) if hold_err else 0.0}
+            "hold_err": max(hold_err) if hold_err else 0.0, "settled": settled}
 
 
 def sim_check() -> None:
@@ -259,6 +272,36 @@ def sim_check() -> None:
     assert f.target_z == 0.90
     f.nudge(1)
     assert f.target_z == 1.00
+    # landing from max height finishes under laser control, not via the settle thrust cut
+    for seed in (1, 2):
+        r = sim(seed, 0.0, pilot=False, pilot_s=8.0, t_true=50500.0, has_z=True, target_z=Z_MAX)
+        assert r["phase"] == "done" and not r["settled"] and r["final_z"] < 0.08, r
+
+    def hovering() -> Flight:
+        f = Flight(1.0, target_z=1.0, has_z=True, z0=0.02)
+        f.phase, f.z, f.z_ref = "pilot", 1.0, 1.0
+        f.t_hover = f.t_hover0 = f.t_lift = 50000.0
+        return f
+    f = hovering()
+    f.land()
+    f.step(0.02, 1.0)
+    assert f.phase == "pilot", "pilot landing must stay cancellable"
+    f = hovering()
+    f.land(force=True)
+    f.step(0.02, 1.0)
+    assert f.phase == "descend", "forced landing must not be cancellable"
+    # laser dropout -> resume holds the current height
+    f = hovering()
+    f.z_age = 1.0
+    f.step(0.02)
+    f.z, f.z_age = 1.4, 0.0
+    f.step(0.02)
+    assert abs(f.z_ref - 1.4) < 0.02 and abs(f.target_z - 1.4) < 0.01, (f.z_ref, f.target_z)
+    # level flight banked 15 deg must not read as climbing
+    f, c = Flight(1.0), math.cos(math.radians(15))
+    for _ in range(100):
+        f.update(1.0 / c, 0.02, tilt_cos=c)
+    assert abs(f.vz) < 0.01, f.vz
     print("sim OK")
 
 
@@ -277,9 +320,7 @@ def run(dry: bool, no_learn: bool, target_z: float, no_laser_ok: bool = False) -
     if controller.get_count() == 0:
         raise SystemExit("no game controller: B (kill) is required")
     pad = controller.Controller(0)
-    trim = dict(manual.DEFAULT_TRIM)
-    if os.path.exists(manual.TRIM_FILE):
-        trim.update(json.load(open(manual.TRIM_FILE)))
+    trim = manual.load_trim()
 
     def stick(a):
         return pad.get_axis(a) / 32767
@@ -368,7 +409,7 @@ def run(dry: bool, no_learn: bool, target_z: float, no_laser_ok: bool = False) -
             low_bat_warned, crit_bat_s = False, 0.0
             while f.phase not in ("done", "abort"):
                 now = time.time()
-                dt, last = now - last, now
+                dt, last = clamp(now - last, 0.001, 0.1), now
                 pygame.event.pump()
                 if pad.get_button(pygame.CONTROLLER_BUTTON_B):
                     killed = "B pressed"
@@ -384,11 +425,13 @@ def run(dry: bool, no_learn: bool, target_z: float, no_laser_ok: bool = False) -
                     print(f"\n*** LOW BATTERY UNDER LOAD ({s['vbat']:.2f}V): motors near saturation, land soon (press A)! ***")
                     low_bat_warned = True
                 crit_bat_s = crit_bat_s + dt if (0 < s["vbat"] < manual.VBAT_LOAD_LAND) else 0.0
-                if crit_bat_s >= 1.5 and f.phase in ("climb", "pilot"):
+                crit = crit_bat_s >= 1.5 and f.phase in ("climb", "pilot")
+                if crit:
                     print(f"\n*** CRITICAL BATTERY ({s['vbat']:.2f}V for 1.5s): auto-landing now! ***")
-                    a_btn = True
-                if not pad.attached() or a_btn or now - t0 > MAX_FLIGHT_S:
+                if a_btn:
                     f.land()
+                if crit or not pad.attached() or now - t0 > MAX_FLIGHT_S:
+                    f.land(force=True)
                 for btn, (k, step) in dpad.items():
                     if pad.get_button(btn) and btn not in held:
                         trim[k] = clamp(trim[k] + step, -manual.TRIM_MAX, manual.TRIM_MAX)
@@ -434,8 +477,10 @@ def run(dry: bool, no_learn: bool, target_z: float, no_laser_ok: bool = False) -
             cf.commander.send_stop_setpoint()
             cf.param.set_value("system.forceArm", "0")
             log.stop()
-            json.dump(trim, open(manual.TRIM_FILE, "w"))
-        if f.phase == "abort":
+            manual.save_trim(trim)
+        if f.phase == "abort" and dry:
+            print(f"\nDRY: ramp reached {T_LIFTOFF_MAX} with thrust 0 sent (expected, nothing wrong)")
+        elif f.phase == "abort":
             print(f"\nABORT: no lift-off up to thrust {T_LIFTOFF_MAX}: charge battery, check props")
         result = "KILLED: " + killed if killed else ("stopped" if f.phase == "abort" else "landed")
         print(f"\n{result}  log: {path}")

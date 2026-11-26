@@ -27,6 +27,7 @@ import json
 import math
 import os
 import time
+from collections import deque
 
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 import pygame  # noqa: E402
@@ -53,6 +54,24 @@ LAND_HOLD_S = 1.5         # s holding full down / LT at FLOOR_Z to confirm landi
 VBAT_REST_WARN = 3.92     # V resting battery warning before arming (full 1S LiPo is ~4.15-4.20V)
 VBAT_LOAD_WARN = 3.38     # V loaded battery warning during flight (mixer saturation starts below ~3.38V)
 VBAT_LOAD_LAND = 3.26     # V critical loaded battery for >=1.5s -> automatic landing to prevent brownout/crash
+ARM_MAX_TILT = 6.0        # deg; refuse to arm when not level
+TELEMETRY_STALE_S = 0.5   # s; refuse to arm without fresh log data
+
+
+def load_trim() -> dict:
+    trim = dict(DEFAULT_TRIM)
+    if os.path.exists(TRIM_FILE):
+        with open(TRIM_FILE) as fh:
+            trim.update(json.load(fh))
+    return trim
+
+
+def save_trim(trim: dict) -> None:
+    """Atomic write: a kill mid-write must not leave a corrupt file that breaks the next start."""
+    tmp = TRIM_FILE + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(trim, fh)
+    os.replace(tmp, TRIM_FILE)
 
 
 def learn_trim(trim: dict, roll_cmd: float, pitch_cmd: float, dt: float) -> None:
@@ -121,13 +140,17 @@ class DjiAltitude:
         self.initial_climb = True
         self.at_floor = False
         self.down_hold_s = 0.0
+        self.prev_up = 0.0
 
     def step(self, dt: float, up_cmd: float, land_btn: bool = False) -> int:
         f, h = self.f, self.h
         if land_btn:
             self.at_floor = False
             f.land()
-        if f.phase == "pilot" and f.has_z:
+        released = up_cmd == 0 and self.prev_up != 0
+        self.prev_up = up_cmd
+        # laser stale -> Flight falls back to thrust control, which needs the raw climb command
+        if f.phase == "pilot" and f.has_z and f.z_age < h.Z_STALE_S:
             # While still climbing to initial 0.50m takeoff height, ignore accidental LT/down unless > 1.2s in pilot
             if self.initial_climb and f.t_phase < 1.2 and up_cmd < 0:
                 up_cmd = 0.0
@@ -159,7 +182,8 @@ class DjiAltitude:
                 return f.step(dt, 0.0)
             else:
                 self.down_hold_s = 0.0
-                if not self.initial_climb:
+                # snap only on release; snapping every idle step would undo LB/RB height steps
+                if released and not self.initial_climb:
                     f.target_z = h.clamp(f.z_ref, FLOOR_Z, h.Z_MAX)
                 return f.step(dt, 0.0)
         return f.step(dt, up_cmd)
@@ -195,6 +219,19 @@ def sim_dji_check() -> None:
           f"floor pause->{z_at_floor:.2f}m (at_floor={dji.at_floor}), final phase={dji.f.phase} z={z:.2f}m")
     assert 0.85 < z_after_climb < 1.15 and abs(z_after_hold - z_after_climb) < 0.06
     assert 0.18 < z_at_floor < 0.30 and dji.f.phase == "done" and z < 0.06
+
+    def hovering() -> DjiAltitude:
+        d = DjiAltitude(g0=1.0, z0=0.02)
+        d.f.phase, d.f.z, d.f.z_ref, d.f.target_z, d.initial_climb = "pilot", 0.52, 0.50, 0.50, False
+        d.f.t_hover = d.f.t_hover0 = d.f.t_lift = 50000.0
+        return d
+    d = hovering()
+    d.f.nudge(1)
+    d.step(0.02, 0.0)
+    assert abs(d.f.target_z - 0.60) < 1e-9, f"RB step lost: target {d.f.target_z}"
+    d = hovering()
+    d.f.z_age = 1.0
+    assert d.step(0.02, 1.0) > d.step(0.02, 0.0) > d.step(0.02, -1.0), "no climb control during laser dropout"
     print("DJI sim OK")
 
 
@@ -227,11 +264,12 @@ def main() -> None:
     print(f"controller: {pad.name}")
 
     cflib.crtp.init_drivers()
-    state = {"acc_samples": [], "z_samples": [], "last_ts": None, "dji": None}
+    # recent ground samples only, so g0/z0 are re-measured at every arm
+    state = {"acc_samples": deque(maxlen=50), "z_samples": deque(maxlen=25), "last_ts": None, "dji": None, "rx_t": 0.0}
 
     def on_log(ts, d, _):
         roll, pitch = d["stabilizer.roll"], d["stabilizer.pitch"]
-        state.update(d, roll=roll, pitch=pitch, vbat=d["pm.vbat"], az=d["acc.z"])
+        state.update(d, roll=roll, pitch=pitch, vbat=d["pm.vbat"], az=d["acc.z"], rx_t=time.time())
         dt = (ts - state["last_ts"]) / 1000 if state["last_ts"] is not None else 0.02
         state["last_ts"] = ts
         z_m = None
@@ -239,12 +277,13 @@ def main() -> None:
         if "range.zrange" in d and 0 <= d["range.zrange"] < 5000:
             z_m = (d["range.zrange"] / 1000.0) * tilt_cos
             state["z_m"] = z_m
-        if state["dji"] is None:
+        dji = state["dji"]  # read once: main thread may set it to None (disarm) between check and use
+        if dji is None:
             state["acc_samples"].append(d["acc.z"])
             if z_m is not None:
                 state["z_samples"].append(z_m)
         else:
-            state["dji"].f.update(d["acc.z"], hover.clamp(dt, 0.001, 0.1), z_m=z_m, tilt_cos=tilt_cos)
+            dji.f.update(d["acc.z"], hover.clamp(dt, 0.001, 0.1), z_m=z_m, tilt_cos=tilt_cos)
 
     with SyncCrazyflie(URI, cf=Crazyflie(rw_cache="/tmp/cf_cache")) as scf:
         cf = scf.cf
@@ -260,9 +299,10 @@ def main() -> None:
         log.data_received_cb.add_callback(on_log)
         log.start()
         time.sleep(1.0)
+        if len(state["acc_samples"]) < 30:
+            raise SystemExit("too few log samples: link problem")
 
         use_dji = has_zr and not args.manual_rt and len(state["z_samples"]) >= 5
-        g0 = sum(state["acc_samples"]) / len(state["acc_samples"]) if state["acc_samples"] else 1.0
         z0 = sum(state["z_samples"]) / len(state["z_samples"]) if use_dji else 0.0
         vbat0 = state.get("pm.vbat", 0.0)
         if 0 < vbat0 < VBAT_REST_WARN:
@@ -275,9 +315,7 @@ def main() -> None:
         else:
             print("Manual RT throttle mode active (--manual-rt)")
 
-        trim = dict(DEFAULT_TRIM)
-        if os.path.exists(TRIM_FILE):
-            trim.update(json.load(open(TRIM_FILE)))
+        trim = load_trim()
         print(f"trim roll={trim['roll']:+.2f} pitch={trim['pitch']:+.2f} (D-pad adjusts)")
         dpad = {pygame.CONTROLLER_BUTTON_DPAD_LEFT: ("roll", -TRIM_STEP),
                 pygame.CONTROLLER_BUTTON_DPAD_RIGHT: ("roll", TRIM_STEP),
@@ -304,11 +342,11 @@ def main() -> None:
         out = csv.writer(fh)
         out.writerow(["t", "armed", "phase", "thrust", "up_cmd", "z_m", "target_z", "vz_est", "roll", "pitch", "vbat", "trim_roll", "trim_pitch", "t_hover"])
         t0 = time.time()
-        print(f"ready: hold A 1 s (triggers/sticks released) to arm" + (" & takeoff to 0.50m" if use_dji else "") + f", X = land, B = KILL  (log: {path})")
+        print("ready: hold A 1 s (triggers/sticks released) to arm" + (" & takeoff to 0.50m" if use_dji else "") + f", X = land, B = KILL  (log: {path})")
         try:
             while time.time() < end:
                 now = time.time()
-                dt, last = now - last, now
+                dt, last = hover.clamp(now - last, 0.001, 0.1), now
                 pygame.event.pump()
                 if not pad.attached():
                     disarm("controller lost")
@@ -326,15 +364,23 @@ def main() -> None:
                 elif not armed and pad.get_button(pygame.CONTROLLER_BUTTON_A) and shape(rt) == 0 and abs(up_cmd) == 0:
                     a_since = a_since or now
                     if now - a_since >= ARM_HOLD_S:
-                        if use_dji:
-                            state["dji"] = DjiAltitude(g0=g0, z0=state.get("z_m", z0))
-                        cf.param.set_value("system.forceArm", "1")
-                        for _ in range(10):
-                            cf.commander.send_setpoint(0, 0, 0, 0)
-                            time.sleep(0.01)
-                        armed = True
-                        last = time.time()  # reset dt after 100ms unlock loop so first ramp step does not jump!
-                        print("\nARMED" + (f" -> climbing to {TAKEOFF_Z:.2f}m hover" if use_dji else ""))
+                        a_since = None
+                        stale = now - state["rx_t"] > TELEMETRY_STALE_S
+                        tilted = max(abs(state.get("roll", 0)), abs(state.get("pitch", 0))) > ARM_MAX_TILT
+                        if stale or tilted:
+                            print("\nARM REFUSED: " + ("no fresh telemetry" if stale else
+                                  f"not level (roll {state['roll']:.1f}, pitch {state['pitch']:.1f})"))
+                        else:
+                            if use_dji:
+                                acc, zs = list(state["acc_samples"]), list(state["z_samples"])
+                                state["dji"] = DjiAltitude(g0=sum(acc) / len(acc), z0=sum(zs) / len(zs))
+                            cf.param.set_value("system.forceArm", "1")
+                            for _ in range(10):
+                                cf.commander.send_setpoint(0, 0, 0, 0)
+                                time.sleep(0.01)
+                            armed = True
+                            last = time.time()  # reset dt after 100ms unlock loop so first ramp step does not jump!
+                            print("\nARMED" + (f" -> climbing to {TAKEOFF_Z:.2f}m hover" if use_dji else ""))
                 else:
                     a_since = None
 
@@ -355,17 +401,21 @@ def main() -> None:
                     crit_bat_s += dt
                 else:
                     crit_bat_s = 0.0
+                if armed and not use_dji and crit_bat_s >= 1.5 > crit_bat_s - dt:
+                    print(f"\n*** CRITICAL BATTERY ({vbat_now:.2f}V): LAND NOW - manual throttle, no auto-land! ***")
 
                 if armed and use_dji and state["dji"] is not None:
                     dji = state["dji"]
                     for btn, sign in shoulders.items():
                         if pad.get_button(btn) and btn not in sh_held:
                             dji.f.nudge(sign)
+                            dji.f.target_z = max(dji.f.target_z, FLOOR_Z)  # LB must not bypass floor protection
                             print(f"\ntarget height = {dji.f.target_z:.2f} m (current z = {dji.f.z:.2f} m)")
                     sh_held = {b for b in shoulders if pad.get_button(b)}
                     x_btn = pad.get_button(pygame.CONTROLLER_BUTTON_X)
                     if crit_bat_s >= 1.5 and dji.f.phase in ("climb", "pilot"):
                         print(f"\n*** CRITICAL BATTERY ({vbat_now:.2f}V for 1.5s): auto-landing now! ***")
+                        dji.f.land(force=True)
                         x_btn = True
                     # Scale down max tilt authority slightly when thrust is near saturation (>54k) so attitude mixer
                     # does not clip motors and drop altitude during right-stick corrections.
@@ -384,7 +434,10 @@ def main() -> None:
                 else:
                     thrust = sp[3] if armed else 0
 
-                if armed and thrust >= LEARN_MIN_THRUST and not args.no_learn:
+                # learn only in steady flight; DJI ramp/landing run above LEARN_MIN_THRUST while on the ground
+                dji = state["dji"]
+                airborne = dji.f.phase == "pilot" if dji is not None else thrust >= LEARN_MIN_THRUST
+                if armed and airborne and not args.no_learn:
                     learn_trim(trim, sp[0], sp[1], dt)
                 cmd = (sp[0] + trim["roll"], sp[1] + trim["pitch"], sp[2], thrust)
                 cf.commander.send_setpoint(*cmd) if armed else cf.commander.send_setpoint(0, 0, 0, 0)
@@ -418,7 +471,7 @@ def main() -> None:
             disarm("exit")
             log.stop()
             fh.close()
-            json.dump(trim, open(TRIM_FILE, "w"))
+            save_trim(trim)
             print(f"\ntrim saved: {trim}  log: {path}")
     print("\nbye")
 
